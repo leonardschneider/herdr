@@ -65,7 +65,11 @@ impl HeadlessServer {
             self.send_to_client(client_id, message);
             return false;
         }
-        if !surface_active {
+        let action_settings_request = matches!(
+            &request.method,
+            api::schema::Method::FileUrlActionsGet(_) | api::schema::Method::FileUrlActionsSet(_)
+        );
+        if !surface_active && !action_settings_request {
             let message = crate::server::client_commands::error_message(
                 boot_id,
                 request_id,
@@ -115,7 +119,8 @@ impl HeadlessServer {
                 deferred_worktree.then(|| api_request_id.clone());
             client.shell_deferred_navigation_response = deferred_navigation.then(Vec::new);
         }
-        let foreground_changed = self.promote_client_to_foreground(client_id);
+        let foreground_changed =
+            !action_settings_request && self.promote_client_to_foreground(client_id);
         foreground_changed
             | self.handle_client_shell_api_request(
                 client_id,

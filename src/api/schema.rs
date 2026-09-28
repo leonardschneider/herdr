@@ -11,6 +11,8 @@ pub mod response;
 pub mod server;
 pub mod session;
 pub mod tabs;
+pub mod target_actions;
+pub use target_actions::*;
 pub mod workspaces;
 pub mod worktrees;
 
@@ -185,6 +187,20 @@ pub enum Method {
     PaneInputSet(PaneInputSetParams),
     #[serde(rename = "pane.link.activate")]
     PaneLinkActivate(PaneLinkActivateParams),
+    #[serde(rename = "file_url_actions.get")]
+    FileUrlActionsGet(EmptyParams),
+    #[serde(rename = "file_url_actions.set")]
+    FileUrlActionsSet(FileUrlActionsSetParams),
+    #[serde(rename = "pane.target.resolve")]
+    PaneTargetResolve(PaneTargetResolveParams),
+    #[serde(rename = "pane.target.execute")]
+    PaneTargetExecute(PaneTargetActionParams),
+    #[serde(rename = "pane.target.authorize")]
+    PaneTargetAuthorize(PaneTargetActionParams),
+    #[serde(rename = "pane.file.resolve")]
+    PaneFileResolve(PaneFileResolveParams),
+    #[serde(rename = "pane.file.edit")]
+    PaneFileEdit(PaneFileEditParams),
     #[serde(rename = "pane.rename")]
     PaneRename(PaneRenameParams),
     #[serde(rename = "pane.send_text")]
@@ -240,6 +256,10 @@ pub enum Method {
     IntegrationList(EmptyParams),
     #[serde(rename = "integration.install")]
     IntegrationInstall(IntegrationInstallParams),
+    #[serde(rename = "integration.list.v2")]
+    IntegrationListV2(EmptyParams),
+    #[serde(rename = "integration.install.v2")]
+    IntegrationInstallV2(IntegrationInstallParamsV2),
     #[serde(rename = "integration.uninstall")]
     IntegrationUninstall(IntegrationUninstallParams),
     #[serde(rename = "plugin.link")]

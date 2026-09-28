@@ -147,6 +147,8 @@ pub(super) struct ShellHitMap {
     pub(super) workspace_max_scroll: usize,
     pub(super) tabs: Vec<(Rect, String)>,
     pub(super) panes: Vec<PaneHit>,
+    /// Surface revisions that produced these hit targets, for explicit file lookups.
+    pub(super) file_surface_revision: Option<(u64, u64)>,
     pub(super) popup: Option<PaneHit>,
     pub(super) pane_splits: Vec<PaneSplitHit>,
     pub(super) agents: Vec<(Rect, String)>,
@@ -299,6 +301,10 @@ pub(crate) enum ClientShellAction {
     },
     ClipboardWrite(Vec<u8>),
     OpenSafeWebUrl(String),
+    LaunchTargetAction {
+        context: ClientFileContext,
+        permit: Box<crate::file_url_actions::ActionPermit>,
+    },
     ActivateEndpoint {
         endpoint_id: ClientEndpointId,
         target: Option<ClientEndpointFocusTarget>,
@@ -443,6 +449,7 @@ pub(super) enum ClientSettingsSection {
     Sound,
     Toast,
     Integrations,
+    FileUrlActions,
 }
 
 impl ClientSettingsSection {
@@ -452,6 +459,7 @@ impl ClientSettingsSection {
         Self::Sound,
         Self::Toast,
         Self::Integrations,
+        Self::FileUrlActions,
     ];
 
     pub(super) fn label(self) -> &'static str {
@@ -461,6 +469,7 @@ impl ClientSettingsSection {
             Self::Sound => "sound",
             Self::Toast => "toasts",
             Self::Integrations => "integrations",
+            Self::FileUrlActions => "File & URL actions",
         }
     }
 }
@@ -471,10 +480,42 @@ pub(super) struct ClientSettingsOverlay {
     pub(super) selected: usize,
     pub(super) original_theme_name: String,
     pub(super) original_palette: Palette,
-    pub(super) integrations: Vec<crate::api::schema::IntegrationInfo>,
+    pub(super) integrations: Vec<crate::api::schema::IntegrationInfoV2>,
     pub(super) integration_messages: Vec<String>,
     pub(super) loading_integrations: bool,
     pub(super) installing_integrations: bool,
+    pub(super) action_draft: Option<Box<ClientActionDraft>>,
+    pub(super) action_reload: Option<u64>,
+}
+
+#[derive(Debug)]
+pub(super) struct ClientActionDraft {
+    pub(super) settings: crate::file_url_actions::ActionSettings,
+    pub(super) profile: crate::file_url_actions::ActionId,
+    pub(super) editing: bool,
+    pub(super) replace_on_type: bool,
+    pub(super) saving: bool,
+    pub(super) error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TargetMenuPhase {
+    RefreshResolve,
+    Resolving,
+    Ready,
+    RefreshExecute(crate::file_url_actions::ActionId),
+    Executing(crate::file_url_actions::ActionId),
+}
+
+#[derive(Default)]
+pub(super) struct ClientActionCache {
+    pub(super) settings: Option<crate::file_url_actions::ActionSettings>,
+    pub(super) generation: Option<u64>,
+    pub(super) refreshing: bool,
+    pub(super) reload_epoch: u64,
+    pub(super) reloading: bool,
+    pub(super) next_refresh: Option<std::time::Instant>,
+    pub(super) authorized: Option<(u64, String)>,
 }
 
 #[derive(Debug)]
@@ -581,6 +622,37 @@ pub(super) enum ClientContextMenuAction {
     Zoom,
     ToggleRightClickPassthrough,
     ClosePane,
+    OpenFile,
+    EditFile,
+}
+
+/// The exact local surface that supplied a file context menu, not the focused pane.
+#[derive(Clone, Debug)]
+pub(crate) struct ClientFileContext {
+    pub(crate) endpoint_id: ClientEndpointId,
+    pub(crate) connection_generation: Option<u64>,
+    pub(super) boot_id: String,
+    pub(super) pane_id: String,
+    pub(super) generation: u64,
+    pub(super) content_revision: u64,
+    pub(super) offset_from_bottom: u64,
+    pub(super) inner_rect: Rect,
+    pub(super) pane_rect: Rect,
+    pub(super) surface_pane_rect: crate::protocol::SurfaceRect,
+    pub(super) surface_inner_rect: crate::protocol::SurfaceRect,
+    pub(super) alternate_screen_active: bool,
+    pub(super) composed_size: Option<(u16, u16)>,
+    pub(super) viewport_row: u16,
+    pub(super) col: u16,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ClientFileMenu {
+    pub(super) highlight: Option<Vec<crate::file_url_actions::TargetCellSpan>>,
+    pub(super) context: ClientFileContext,
+    pub(super) phase: TargetMenuPhase,
+    pub(super) target: Option<crate::file_url_actions::ResolvedTarget>,
+    pub(super) settings: Option<crate::file_url_actions::ActionSettings>,
 }
 
 #[derive(Debug)]
@@ -602,6 +674,7 @@ pub(super) enum ClientContextMenuTarget {
         source_pane_id: Option<String>,
         has_manual_label: bool,
         right_click_passthrough: bool,
+        file: Option<Box<ClientFileMenu>>,
     },
 }
 
@@ -614,7 +687,7 @@ pub(super) struct ClientContextMenuOverlay {
 }
 
 pub(super) struct ClientContextMenuItem {
-    pub(super) label: &'static str,
+    pub(super) label: String,
     pub(super) action: ClientContextMenuAction,
 }
 
@@ -697,6 +770,22 @@ pub(super) enum PendingEndpointKind {
         pane_id: String,
         absolute_row: u32,
         generation: u64,
+    },
+    PaneFileResolve {
+        context: ClientFileContext,
+    },
+    ActionSettingsGet {
+        epoch: u64,
+    },
+    ActionSettingsReload {
+        epoch: u64,
+    },
+    ActionSettingsSet {
+        revision: crate::file_url_actions::ActionRevision,
+    },
+    TargetAction {
+        file: Box<ClientFileMenu>,
+        action: crate::file_url_actions::ActionId,
     },
     PaneLinkActivate {
         pane_id: String,
@@ -958,6 +1047,7 @@ pub(crate) struct ClientShellState {
     pub(super) popup_pending: bool,
     pub(super) popup_pending_deadline: Option<std::time::Instant>,
     pub(super) next_request_id: u64,
+    pub(super) action_cache: ClientActionCache,
     pub(super) pending_requests: HashMap<String, PendingEndpointRequest>,
     pub(super) pending_integration_installs: usize,
     pub(super) pending_notifications: Vec<ClientPendingNotification>,
@@ -1116,6 +1206,7 @@ impl ClientShellState {
             popup_pending: false,
             popup_pending_deadline: None,
             next_request_id: 1,
+            action_cache: ClientActionCache::default(),
             pending_requests: HashMap::new(),
             pending_integration_installs: 0,
             pending_notifications: Vec::new(),
@@ -1264,6 +1355,7 @@ impl ClientShellState {
         self.last_composed_at = None;
         self.selection_repaint_deadline = None;
         self.pending_requests.clear();
+        self.action_cache = ClientActionCache::default();
         self.pane_scroll_in_flight.clear();
         self.pane_scroll_queued.clear();
         self.pane_scroll_targets.clear();
@@ -1806,6 +1898,7 @@ impl ClientShellState {
         self.graphics
             .set_scene(std::mem::take(&mut surface.graphics));
         self.pane_surface = Some(surface);
+        self.invalidate_stale_file_menu();
         self.resume_mobile_switcher_if_ready();
         self.reconcile_input_source();
     }

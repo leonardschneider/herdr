@@ -1,5 +1,49 @@
 use std::path::{Path, PathBuf};
 
+pub(crate) fn sample_local_regular_file(
+    path: &Path,
+) -> std::io::Result<(std::fs::Metadata, Vec<u8>)> {
+    use std::io::Read as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    super::validate_local_file_path(path)?;
+    // Inspect the opened descriptor, not only a pre-open path stat. O_NONBLOCK
+    // prevents a replaced path/FIFO from hanging the file-action request.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "file actions only support regular files",
+        ));
+    }
+    let mut bytes = Vec::new();
+    (&file)
+        .take(super::local_files::LOCAL_FILE_SAMPLE_BYTES)
+        .read_to_end(&mut bytes)?;
+    if !same_local_file(&metadata, &file.metadata()?) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "file changed while inspecting its contents",
+        ));
+    }
+    Ok((metadata, bytes))
+}
+
+pub(crate) fn same_local_file(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    a.dev() == b.dev()
+        && a.ino() == b.ino()
+        && a.len() == b.len()
+        && a.mtime() == b.mtime()
+        && a.mtime_nsec() == b.mtime_nsec()
+        && a.ctime() == b.ctime()
+        && a.ctime_nsec() == b.ctime_nsec()
+}
+
 pub(crate) fn classify_child_exit(status: &portable_pty::ExitStatus) -> super::ChildExitReason {
     if status.signal().is_some() {
         super::ChildExitReason::Interrupted
@@ -343,6 +387,62 @@ pub(crate) fn set_default_plugin_pane_pwd(env: &mut Vec<(String, String)>, cwd: 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn local_file_sample_is_bounded_and_identity_detects_replacement() {
+        let root = std::env::temp_dir().join(format!(
+            "herdr-local-file-sample-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("sample.txt");
+        std::fs::write(&path, vec![b'a'; 16384]).expect("file");
+        let (original, sample) = super::sample_local_regular_file(&path).expect("sample");
+        assert_eq!(sample, vec![b'a'; 8192]);
+        assert!(super::same_local_file(
+            &original,
+            &std::fs::metadata(&path).expect("metadata")
+        ));
+        let replacement = root.join("replacement.txt");
+        std::fs::write(&replacement, vec![b'a'; 16384]).expect("replacement");
+        std::fs::rename(&replacement, &path).expect("replace");
+        assert!(!super::same_local_file(
+            &original,
+            &std::fs::metadata(&path).expect("new metadata")
+        ));
+        assert!(super::sample_local_regular_file(&root).is_err());
+        let link = root.join("link.txt");
+        std::os::unix::fs::symlink(&path, &link).expect("symlink");
+        assert!(super::sample_local_regular_file(&link).is_err());
+        assert_eq!(
+            std::fs::read(&path).expect("original file remains"),
+            vec![b'a'; 16384]
+        );
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn local_file_sample_refuses_fifo_without_waiting_for_a_writer() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let path = std::env::temp_dir().join(format!(
+            "herdr-local-file-fifo-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).expect("path");
+        // This owned FIFO has no writer; a blocking open would hang this test.
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        let result = super::sample_local_regular_file(&path);
+        std::fs::remove_file(path).expect("cleanup");
+        assert!(result.is_err());
+    }
+
     use super::*;
 
     #[test]

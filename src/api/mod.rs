@@ -60,6 +60,7 @@ pub(crate) fn request_changes_ui(request: &Request) -> bool {
             | Method::PaneResize(_)
             | Method::PaneScroll(_)
             | Method::PaneEditScrollback(_)
+            | Method::PaneTargetExecute(_)
             | Method::PaneFocus(_)
             | Method::PaneInputSet(_)
             | Method::PaneRename(_)
@@ -84,6 +85,12 @@ pub(crate) fn request_changes_ui(request: &Request) -> bool {
             | Method::PluginPaneFocus(_)
             | Method::PluginPaneClose(_)
     )
+}
+
+/// Trusted in-process metadata, never deserialized from a request or request ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ActionRequestContext {
+    pub(crate) client_id: u64,
 }
 
 pub struct ApiRequestMessage {

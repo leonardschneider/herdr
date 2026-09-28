@@ -154,6 +154,9 @@ pub struct App {
     pub render_notify: Arc<Notify>,
     pub(crate) render_dirty: Arc<crate::render_signal::RenderSignal>,
     pub(crate) full_redraw_pending: bool,
+    pub(crate) file_targets: crate::file_paths::TargetCache,
+    pub(crate) action_store: crate::config::ActionStore,
+    pub(crate) action_targets: api::target_actions::ActionTargetCache,
     pub(crate) overlay_panes: HashMap<crate::layout::PaneId, OverlayPaneState>,
     pub(crate) config_reloaded_from_disk: bool,
     client_shell_keybindings_profile: Option<String>,
@@ -616,6 +619,9 @@ impl App {
             render_notify,
             render_dirty,
             full_redraw_pending: false,
+            file_targets: crate::file_paths::TargetCache::default(),
+            action_store: crate::config::ActionStore::new(crate::config::config_path()),
+            action_targets: api::target_actions::ActionTargetCache::default(),
             overlay_panes: HashMap::new(),
             config_reloaded_from_disk: false,
             client_shell_keybindings_profile,
@@ -755,6 +761,8 @@ impl App {
         notify_success: bool,
     ) -> crate::config::ConfigReloadReport {
         self.config_reloaded_from_disk = true;
+        self.action_store.reload();
+        self.action_targets.clear();
         let previous_toast = self.state.toast.clone();
         let report = match crate::config::load_live_config() {
             Ok(loaded) => self.apply_live_config(

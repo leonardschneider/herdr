@@ -64,6 +64,313 @@ fn request_id(actions: &[ClientShellAction]) -> &str {
     &request.id
 }
 
+fn integration_settings(methods: Option<&[&str]>) -> (ClientShellState, Vec<ClientShellAction>) {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state
+        .set_endpoint_methods(methods.map(|methods| methods.iter().map(|s| (*s).into()).collect()));
+    state.open_settings_overlay();
+    let mut input = ClientShellInput::default();
+    state.select_settings_section(ClientSettingsSection::Integrations, &mut input);
+    (state, input.actions)
+}
+
+fn integration_list_v2(targets: &[&str]) -> crate::api::schema::ResponseResult {
+    crate::api::schema::ResponseResult::IntegrationListV2 {
+        integrations: targets
+            .iter()
+            .map(|target| crate::api::schema::IntegrationInfoV2 {
+                target: (*target).into(),
+                label: (*target).into(),
+                command: (*target).into(),
+                available: true,
+                state: crate::api::schema::IntegrationState::NotInstalled,
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn integration_settings_negotiates_list_and_install_independently() {
+    use crate::api::schema::*;
+    for methods in [
+        None,
+        Some(&["integration.list", "integration.install"][..]),
+        Some(&["integration.list.v2", "integration.install.v2"][..]),
+        Some(&["integration.list.v2", "integration.install"][..]),
+        Some(&["integration.list", "integration.install.v2"][..]),
+        Some(&["integration.list.v2"][..]),
+    ] {
+        let (mut state, list) = integration_settings(methods);
+        let v2_list = methods.is_some_and(|m| m.contains(&"integration.list.v2"));
+        let v2_install = methods.is_some_and(|m| m.contains(&"integration.install.v2"));
+        let [ClientShellAction::Endpoint { request, .. }] = &list[..] else {
+            panic!("list");
+        };
+        assert_eq!(
+            matches!(request.method, Method::IntegrationListV2(_)),
+            v2_list
+        );
+        let result = if v2_list {
+            integration_list_v2(&["codex", "letta", "future_agent"])
+        } else {
+            ResponseResult::IntegrationList {
+                integrations: vec![IntegrationInfo {
+                    target: IntegrationTarget::Codex,
+                    label: "codex".into(),
+                    command: "codex".into(),
+                    available: true,
+                    state: IntegrationState::NotInstalled,
+                }],
+            }
+        };
+        state.handle_endpoint_result("boot-1", request_id(&list), Ok(result));
+        let Some(ClientShellOverlay::Settings(settings)) = &state.overlay else {
+            panic!("settings");
+        };
+        assert!(!settings.loading_integrations);
+        assert_eq!(settings.integrations[0].target, "codex");
+        if v2_list {
+            assert_eq!(settings.integrations[2].target, "future_agent");
+            state.compose(106, 30).expect("unknown target renders");
+        }
+        let install = state.handle_input_bytes(b"\r");
+        let legacy_install = methods.is_none_or(|m| m.contains(&"integration.install"));
+        assert_eq!(
+            install.actions.len(),
+            if v2_install {
+                if v2_list {
+                    3
+                } else {
+                    1
+                }
+            } else {
+                usize::from(legacy_install)
+            }
+        );
+        for action in &install.actions {
+            let ClientShellAction::Endpoint { request, .. } = action else {
+                panic!("install");
+            };
+            let result = match &request.method {
+                Method::IntegrationInstallV2(params) => {
+                    assert!(v2_install);
+                    ResponseResult::IntegrationInstallV2 {
+                        target: params.target.clone(),
+                        details: IntegrationInstallResult {
+                            messages: vec![format!("installed {}", params.target)],
+                        },
+                    }
+                }
+                Method::IntegrationInstall(params) => {
+                    assert!(!v2_install);
+                    assert_eq!(params.target, IntegrationTarget::Codex);
+                    ResponseResult::IntegrationInstall {
+                        target: params.target,
+                        details: IntegrationInstallResult {
+                            messages: vec!["installed codex".into()],
+                        },
+                    }
+                }
+                _ => panic!("unexpected install"),
+            };
+            let (_, refresh) = state.handle_endpoint_result("boot-1", &request.id, Ok(result));
+            for action in refresh {
+                let ClientShellAction::Endpoint { request, .. } = action else {
+                    panic!("refresh");
+                };
+                assert_eq!(
+                    matches!(request.method, Method::IntegrationListV2(_)),
+                    v2_list
+                );
+            }
+        }
+        let Some(ClientShellOverlay::Settings(settings)) = &state.overlay else {
+            panic!("settings");
+        };
+        assert!(!settings.installing_integrations);
+        if v2_list && !v2_install {
+            assert!(settings
+                .integration_messages
+                .iter()
+                .any(|m| m.contains("does not support installing integration letta")));
+            assert!(settings
+                .integration_messages
+                .iter()
+                .any(|m| m.contains("does not support installing integration future_agent")));
+        }
+    }
+}
+
+#[test]
+fn integration_settings_legacy_targets_roundtrip_without_loss() {
+    use crate::api::schema::*;
+    let targets = [
+        IntegrationTarget::Pi,
+        IntegrationTarget::Omp,
+        IntegrationTarget::Claude,
+        IntegrationTarget::Codex,
+        IntegrationTarget::Copilot,
+        IntegrationTarget::Devin,
+        IntegrationTarget::Droid,
+        IntegrationTarget::Kimi,
+        IntegrationTarget::Opencode,
+        IntegrationTarget::Kilo,
+        IntegrationTarget::Hermes,
+        IntegrationTarget::Qodercli,
+        IntegrationTarget::Qwen,
+        IntegrationTarget::Cursor,
+        IntegrationTarget::Mastracode,
+        IntegrationTarget::AntigravityCli,
+        IntegrationTarget::Grok,
+    ];
+    let (mut state, list) = integration_settings(None);
+    state.handle_endpoint_result(
+        "boot-1",
+        request_id(&list),
+        Ok(ResponseResult::IntegrationList {
+            integrations: targets
+                .iter()
+                .map(|target| IntegrationInfo {
+                    target: *target,
+                    label: "legacy".into(),
+                    command: "legacy".into(),
+                    available: true,
+                    state: IntegrationState::NotInstalled,
+                })
+                .collect(),
+        }),
+    );
+    let install = state.handle_input_bytes(b"\r");
+    assert_eq!(install.actions.len(), targets.len());
+    for (action, target) in install.actions.iter().zip(targets) {
+        assert!(
+            matches!(action, ClientShellAction::Endpoint { request, .. } if matches!(request.method, Method::IntegrationInstall(IntegrationInstallParams { target: actual }) if actual == target))
+        );
+    }
+}
+
+#[test]
+fn integration_settings_v2_errors_and_cancellation_do_not_retry_installs() {
+    for code in ["method_not_found", "endpoint_timeout", "endpoint_cancelled"] {
+        let (mut state, list) =
+            integration_settings(Some(&["integration.list.v2", "integration.install.v2"]));
+        state.handle_endpoint_result(
+            "boot-1",
+            request_id(&list),
+            Ok(integration_list_v2(&["letta"])),
+        );
+        let install = state.handle_input_bytes(b"\r");
+        let (_, actions) = state.handle_endpoint_result(
+            "boot-1",
+            request_id(&install.actions),
+            Err(ClientShellEndpointError {
+                code: Some(code.into()),
+                message: code.into(),
+            }),
+        );
+        assert!(actions.iter().all(|action| matches!(action, ClientShellAction::Endpoint { request, .. } if matches!(request.method, crate::api::schema::Method::IntegrationListV2(_)))));
+        if code == "endpoint_cancelled" {
+            assert!(actions.is_empty());
+        }
+        let Some(ClientShellOverlay::Settings(settings)) = &state.overlay else {
+            panic!("settings");
+        };
+        assert!(!settings.installing_integrations);
+        assert!(settings.integration_messages.iter().any(|m| m == code));
+        assert!(state
+            .handle_endpoint_result(
+                "boot-1",
+                request_id(&install.actions),
+                Ok(crate::api::schema::ResponseResult::Ok {})
+            )
+            .1
+            .is_empty());
+        assert_eq!(state.pending_integration_installs, 0);
+    }
+}
+
+#[test]
+fn integration_settings_v2_list_failure_clears_loader_without_fallback() {
+    for code in ["method_not_found", "endpoint_timeout"] {
+        let (mut state, list) = integration_settings(Some(&["integration.list.v2"]));
+        let (_, actions) = state.handle_endpoint_result(
+            "boot-1",
+            request_id(&list),
+            Err(ClientShellEndpointError {
+                code: Some(code.into()),
+                message: code.into(),
+            }),
+        );
+        assert!(actions.is_empty());
+        let Some(ClientShellOverlay::Settings(settings)) = &state.overlay else {
+            panic!("settings");
+        };
+        assert!(!settings.loading_integrations);
+        assert!(state.visible_endpoint_notice.is_some());
+        state.cancel_settings_overlay();
+        assert!(!state.handle_input_bytes(b"x").requests.is_empty());
+        assert!(state.visible_endpoint_notice.is_some());
+    }
+}
+
+#[test]
+fn integration_settings_v2_install_completion_after_switch_does_not_refresh_new_endpoint() {
+    let (mut state, list) =
+        integration_settings(Some(&["integration.list.v2", "integration.install.v2"]));
+    state.handle_endpoint_result(
+        "boot-1",
+        request_id(&list),
+        Ok(integration_list_v2(&["letta"])),
+    );
+    let install = state.handle_input_bytes(b"\r");
+    let remote = add_remote(&mut state);
+    assert!(state.activate_endpoint_projection(&remote));
+    state.open_settings_overlay();
+    let (_, actions) = state.handle_endpoint_result(
+        "boot-1",
+        request_id(&install.actions),
+        Ok(crate::api::schema::ResponseResult::IntegrationInstallV2 {
+            target: "letta".into(),
+            details: crate::api::schema::IntegrationInstallResult {
+                messages: vec!["old endpoint installed".into()],
+            },
+        }),
+    );
+    assert!(actions.is_empty());
+    let Some(ClientShellOverlay::Settings(settings)) = &state.overlay else {
+        panic!("settings");
+    };
+    assert!(!settings.loading_integrations);
+    assert!(!settings.installing_integrations);
+    assert!(settings.integration_messages.is_empty());
+}
+
+#[test]
+fn integration_settings_v2_late_results_cannot_cross_endpoint_switch() {
+    let (mut state, list) =
+        integration_settings(Some(&["integration.list.v2", "integration.install.v2"]));
+    let remote = add_remote(&mut state);
+    assert!(state.activate_endpoint_projection(&remote));
+    state.open_settings_overlay();
+    let mut input = ClientShellInput::default();
+    state.select_settings_section(ClientSettingsSection::Integrations, &mut input);
+    assert!(
+        matches!(&input.actions[..], [ClientShellAction::Endpoint { request, .. }] if matches!(request.method, crate::api::schema::Method::IntegrationList(_)))
+    );
+    state.handle_endpoint_result(
+        "boot-1",
+        request_id(&list),
+        Ok(integration_list_v2(&["letta"])),
+    );
+    let Some(ClientShellOverlay::Settings(settings)) = &state.overlay else {
+        panic!("settings");
+    };
+    assert!(settings.integrations.is_empty());
+    assert!(settings.loading_integrations);
+}
+
 fn worktree_created_result() -> crate::api::schema::ResponseResult {
     serde_json::from_value(serde_json::json!({
         "type": "worktree_created",

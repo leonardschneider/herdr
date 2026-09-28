@@ -1,0 +1,10 @@
+{
+  "pane.file.edit": {
+    "params": {"pane_id": "pane_1", "target_id": "file-1"},
+    "required": ["pane_id", "target_id"]
+  },
+  "pane.file.resolve": {
+    "params": {"pane_id": "pane_1", "viewport_row": 0, "col": 2, "content_revision": 4, "offset_from_bottom": 0},
+    "required": ["col", "content_revision", "offset_from_bottom", "pane_id", "viewport_row"]
+  }
+}

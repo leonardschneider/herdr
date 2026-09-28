@@ -265,8 +265,17 @@ pub(crate) struct RemoteSshConfigPaths {
 mod unix_common;
 #[cfg(unix)]
 pub(crate) use unix_common::{
-    begin_cli_output, end_cli_output, forward_remote_bridge_stdio, RemoteBridgeWake,
+    begin_cli_output, end_cli_output, forward_remote_bridge_stdio, same_local_file,
+    sample_local_regular_file, RemoteBridgeWake,
 };
+
+mod local_files;
+#[cfg(not(target_os = "macos"))]
+pub(crate) use local_files::launch_target_action;
+pub(crate) use local_files::validate_local_file_path;
+pub(crate) use local_files::{local_file_actions_supported, local_file_editor_argv};
+#[cfg(not(unix))]
+pub(crate) use local_files::{same_local_file, sample_local_regular_file};
 
 mod client_state;
 pub(crate) use client_state::{create_private_state_file, replace_file, sync_parent_directory};

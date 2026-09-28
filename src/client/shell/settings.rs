@@ -26,7 +26,7 @@ fn toast_index(delivery: crate::config::ToastDelivery) -> usize {
     }
 }
 
-pub(super) fn integration_needs_install(info: &crate::api::schema::IntegrationInfo) -> bool {
+pub(super) fn integration_needs_install(info: &crate::api::schema::IntegrationInfoV2) -> bool {
     info.state == crate::api::schema::IntegrationState::Outdated
         || info.available && info.state == crate::api::schema::IntegrationState::NotInstalled
 }
@@ -42,6 +42,12 @@ impl ClientShellState {
             integration_messages: Vec::new(),
             loading_integrations: false,
             installing_integrations: false,
+            action_draft: self
+                .action_cache
+                .settings
+                .clone()
+                .map(|settings| Box::new(ClientActionDraft::new(settings))),
+            action_reload: None,
         }));
     }
 
@@ -51,7 +57,7 @@ impl ClientShellState {
             ClientSettingsSection::Indicators => indicator_index(self.config.status_indicators),
             ClientSettingsSection::Sound => usize::from(!self.config.sound_enabled),
             ClientSettingsSection::Toast => toast_index(self.config.toast_delivery),
-            ClientSettingsSection::Integrations => 0,
+            ClientSettingsSection::Integrations | ClientSettingsSection::FileUrlActions => 0,
         }
     }
 
@@ -71,11 +77,24 @@ impl ClientShellState {
                 }))
             );
         if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+            if settings
+                .action_draft
+                .as_ref()
+                .is_some_and(|draft| draft.saving)
+            {
+                return;
+            }
+            if let Some(draft) = settings.action_draft.as_mut() {
+                draft.editing = false;
+            }
             settings.section = section;
             settings.selected = selected;
         }
         if request_integrations {
             self.queue_integration_list(outcome, true);
+        }
+        if section == ClientSettingsSection::FileUrlActions {
+            self.refresh_action_settings(outcome);
         }
         outcome.repaint = true;
     }
@@ -100,6 +119,10 @@ impl ClientShellState {
                 ClientSettingsSection::Indicators | ClientSettingsSection::Sound => 2,
                 ClientSettingsSection::Toast => 4,
                 ClientSettingsSection::Integrations => settings.integrations.len(),
+                ClientSettingsSection::FileUrlActions => settings
+                    .action_draft
+                    .as_ref()
+                    .map_or(0, |draft| draft.rows().len()),
             },
             _ => 0,
         }
@@ -152,6 +175,10 @@ impl ClientShellState {
     }
 
     pub(super) fn cancel_settings_overlay(&mut self) {
+        if matches!(self.overlay.as_ref(), Some(ClientShellOverlay::Settings(settings)) if settings.action_draft.as_ref().is_some_and(|draft| draft.saving))
+        {
+            return;
+        }
         let Some(ClientShellOverlay::Settings(settings)) = self.overlay.take() else {
             return;
         };
@@ -223,6 +250,7 @@ impl ClientShellState {
                 );
             }
             ClientSettingsSection::Integrations => self.install_recommended_integrations(outcome),
+            ClientSettingsSection::FileUrlActions => self.save_action_settings(outcome),
         }
     }
 
@@ -233,8 +261,13 @@ impl ClientShellState {
                 settings.integration_messages.clear();
             }
         }
+        let method = if self.advertises_endpoint_method("integration.list.v2") {
+            crate::api::schema::Method::IntegrationListV2(crate::api::schema::EmptyParams::default())
+        } else {
+            crate::api::schema::Method::IntegrationList(crate::api::schema::EmptyParams::default())
+        };
         if !self.push_endpoint_method_with_kind(
-            crate::api::schema::Method::IntegrationList(crate::api::schema::EmptyParams::default()),
+            method,
             PendingEndpointKind::IntegrationList,
             outcome,
         ) {
@@ -253,7 +286,7 @@ impl ClientShellState {
                 .integrations
                 .iter()
                 .filter(|integration| integration_needs_install(integration))
-                .map(|integration| integration.target)
+                .map(|integration| integration.target.clone())
                 .collect::<Vec<_>>(),
             _ => return,
         };
@@ -266,10 +299,27 @@ impl ClientShellState {
         }
         self.pending_integration_installs = 0;
         for target in targets {
-            if self.push_endpoint_method_with_kind(
+            // The frozen v1 enum rejects new target strings; never substitute a target.
+            let method = if self.advertises_endpoint_method("integration.install.v2") {
+                crate::api::schema::Method::IntegrationInstallV2(
+                    crate::api::schema::IntegrationInstallParamsV2 { target },
+                )
+            } else if let Ok(target) = serde_json::from_value::<crate::api::schema::IntegrationTarget>(
+                serde_json::Value::String(target.clone()),
+            ) {
                 crate::api::schema::Method::IntegrationInstall(
                     crate::api::schema::IntegrationInstallParams { target },
-                ),
+                )
+            } else {
+                if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                    settings.integration_messages.push(format!(
+                        "endpoint does not support installing integration {target}"
+                    ));
+                }
+                continue;
+            };
+            if self.push_endpoint_method_with_kind(
+                method,
                 PendingEndpointKind::IntegrationInstall,
                 outcome,
             ) {
@@ -293,8 +343,47 @@ impl ClientShellState {
             PendingEndpointKind::IntegrationList => {
                 if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
                     settings.loading_integrations = false;
+                    let result = result.map(|result| match result {
+                        crate::api::schema::ResponseResult::IntegrationList { integrations } => {
+                            crate::api::schema::ResponseResult::IntegrationListV2 {
+                                integrations: integrations
+                                    .into_iter()
+                                    .map(|info| {
+                                        use crate::api::schema::IntegrationTarget::*;
+                                        let target = match info.target {
+                                            Pi => "pi",
+                                            Omp => "omp",
+                                            Claude => "claude",
+                                            Codex => "codex",
+                                            Copilot => "copilot",
+                                            Devin => "devin",
+                                            Droid => "droid",
+                                            Kimi => "kimi",
+                                            Opencode => "opencode",
+                                            Kilo => "kilo",
+                                            Hermes => "hermes",
+                                            Qodercli => "qodercli",
+                                            Qwen => "qwen",
+                                            Cursor => "cursor",
+                                            Mastracode => "mastracode",
+                                            AntigravityCli => "antigravity_cli",
+                                            Grok => "grok",
+                                        };
+                                        crate::api::schema::IntegrationInfoV2 {
+                                            target: target.into(),
+                                            label: info.label,
+                                            command: info.command,
+                                            available: info.available,
+                                            state: info.state,
+                                        }
+                                    })
+                                    .collect(),
+                            }
+                        }
+                        other => other,
+                    });
                     match result {
-                        Ok(crate::api::schema::ResponseResult::IntegrationList {
+                        Ok(crate::api::schema::ResponseResult::IntegrationListV2 {
                             integrations,
                         }) => {
                             settings.integrations = integrations;
@@ -321,6 +410,10 @@ impl ClientShellState {
                 if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
                     match result {
                         Ok(crate::api::schema::ResponseResult::IntegrationInstall {
+                            details,
+                            ..
+                        })
+                        | Ok(crate::api::schema::ResponseResult::IntegrationInstallV2 {
                             details,
                             ..
                         }) => settings.integration_messages.extend(details.messages),
@@ -354,6 +447,9 @@ impl ClientShellState {
     ) -> bool {
         if !matches!(self.overlay, Some(ClientShellOverlay::Settings(_))) {
             return false;
+        }
+        if self.route_action_editor_key(key, outcome) {
+            return true;
         }
         let (code, modifiers) = crate::config::normalize_key_combo((key.code, key.modifiers));
         if code == KeyCode::Esc {
@@ -392,7 +488,11 @@ impl ClientShellState {
             return true;
         }
         if matches!(code, KeyCode::Enter | KeyCode::Char(' ')) && modifiers.is_empty() {
-            self.apply_settings_choice(outcome);
+            if self.action_editor_active() {
+                self.activate_action_editor_row(outcome);
+            } else {
+                self.apply_settings_choice(outcome);
+            }
             return true;
         }
         true

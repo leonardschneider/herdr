@@ -233,6 +233,38 @@ description = "apply layout"
 
 在 Windows 上，自定义命令字符串使用 `cmd.exe /d /c`，因此环境变量应采用 `%HERDR_BIN_PATH%` 语法。若要运行 PowerShell 语法，请显式调用它，例如 `powershell.exe -NoProfile -Command "..."`。
 
+## 文件与 URL 操作
+
+设置 (`prefix+s`) 的文件/URL 部分将 Editor 和 System opener 作为一个草稿编辑。Save 验证后保存，Cancel 不改变已有配置。可选择固定程序、各个参数、`pane` / `external` 启动方式和适用的目标类型。配置由本地运行时管理；同时编辑或磁盘外部修改发生冲突时，需要重载，不会直接覆盖新设置。
+
+下面的完整配置用 GUI 编辑器打开文本文件，用 macOS `open` 打开文件和网页 URL：
+
+```toml
+[file_url_actions.editor]
+enabled = true
+executable = "code"
+arguments = ["--goto", "{path}:{line}:{column}"]
+launch_mode = "external"
+[file_url_actions.editor.applies_to]
+text_files = true
+other_files = false
+urls = false
+
+[file_url_actions.system_opener]
+enabled = true
+executable = "open"
+arguments = ["--", "{target}"]
+launch_mode = "external"
+[file_url_actions.system_opener.applies_to]
+text_files = true
+other_files = true
+urls = true
+```
+
+省略该部分时，编辑器默认为新窗格中的 Neovim。`{target}` 是规范文件路径或原始 URL；`{path}` / `{url}` 限定目标类型。文件的 `{line}` / `{column}` 未指定时默认为 1。字面花括号使用 `{{` / `}}`。启用 URL 的配置不能使用仅适用于文件的占位符。Herdr 不展开环境变量、不隐式执行 shell，也不下载 URL 内容。
+
+自定义程序使用您的权限运行，属于可信配置。请将目标作为数据参数传入，不要把它当作代码求值。针对常见解释器的检查不能把任意程序变成安全沙箱。启动失败时不会自动替换成另一个命令。此功能需要新客户端和新服务器；只安装二进制文件不会更新已经运行的持久会话。
+
 ## 主题
 
 选择内置主题：

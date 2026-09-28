@@ -533,6 +533,54 @@ pub fn open_url(url: &str) -> std::io::Result<Option<std::process::Child>> {
         .map(Some)
 }
 
+fn local_file_open_command(path: &Path) -> std::io::Result<Command> {
+    super::validate_local_file_path(path)?;
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Open in macOS requires a regular file, not a directory or symlink",
+        ));
+    }
+    let mut command = Command::new("open");
+    command
+        .arg("--")
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    Ok(command)
+}
+
+pub(crate) fn open_local_file(path: &Path) -> std::io::Result<Option<std::process::Child>> {
+    local_file_open_command(path)?.spawn().map(Some)
+}
+
+pub(crate) fn launch_target_action(
+    target: &crate::file_url_actions::TargetValue,
+    profile: &crate::file_url_actions::ActionProfile,
+) -> std::io::Result<Option<std::process::Child>> {
+    let argv = super::local_files::target_action_argv(target, profile)?;
+    if let crate::file_url_actions::TargetValue::File { path, .. } = target {
+        if argv == ["open", "--", path.as_str()] {
+            return open_local_file(Path::new(path));
+        }
+    }
+    let Some((program, arguments)) = argv.split_first() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Empty action command",
+        ));
+    };
+    let mut command = Command::new(program);
+    command
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command.spawn().map(Some)
+}
+
 pub fn read_clipboard_image() -> Option<ClipboardImage> {
     let path = std::env::temp_dir().join(format!(
         "herdr-clipboard-image-{}-{}.png",
@@ -998,6 +1046,104 @@ pub fn process_exists(pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn configured_external_actions_keep_literal_argv_and_fail_closed() {
+        use crate::file_url_actions::{ActionProfiles, TargetFileKind, TargetValue};
+        use std::os::unix::fs::PermissionsExt;
+        struct OwnedDirectory(std::path::PathBuf);
+        impl Drop for OwnedDirectory {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let root = std::env::temp_dir().join(format!(
+            "herdr-target-launch-{}-{}",
+            std::process::id(),
+            unique_timestamp_nanos()
+        ));
+        std::fs::create_dir(&root).expect("owned directory");
+        let _cleanup = OwnedDirectory(root.clone());
+        let recorder = root.join("recorder");
+        let output = root.join("argv");
+        std::fs::write(
+            &recorder,
+            format!(
+                "#!/bin/sh\nprintf '%s\\0' \"$@\" > '{}'\n",
+                output.display()
+            ),
+        )
+        .expect("recorder");
+        std::fs::set_permissions(&recorder, std::fs::Permissions::from_mode(0o700))
+            .expect("permissions");
+        let file = root.join("space ' $(touch NOT-RUN);文.txt");
+        std::fs::write(&file, b"keep this file").expect("sample");
+        let target = TargetValue::File {
+            path: file.to_string_lossy().into_owned(),
+            line: None,
+            column: None,
+            file_kind: TargetFileKind::Text,
+        };
+        let mut profile = ActionProfiles::default().system_opener;
+        profile.executable = recorder.to_string_lossy().into_owned();
+        let mut child = launch_target_action(&target, &profile)
+            .expect("launch")
+            .expect("child");
+        assert!(child.wait().expect("exit").success());
+        assert_eq!(
+            std::fs::read(&output).expect("argv"),
+            format!("--\0{}\0", file.display()).as_bytes()
+        );
+        assert_eq!(
+            std::fs::read(&file).expect("sample survives"),
+            b"keep this file"
+        );
+        assert!(!root.join("NOT-RUN").exists());
+        let url = TargetValue::Url {
+            url: "https://example.com/a?q=x%20y&b=$(echo%20NO);z#fragment".into(),
+        };
+        let mut child = launch_target_action(&url, &profile)
+            .expect("URL launch")
+            .expect("child");
+        assert!(child.wait().expect("exit").success());
+        assert_eq!(
+            std::fs::read(&output).expect("URL argv"),
+            format!("--\0{}\0", url.display_target()).as_bytes()
+        );
+        std::fs::remove_file(&file).expect("remove owned sample for replacement test");
+        std::os::unix::fs::symlink(&output, &file).expect("replacement symlink");
+        assert!(launch_target_action(&target, &profile).is_err());
+        profile.executable = root.join("missing-program").to_string_lossy().into_owned();
+        assert!(launch_target_action(&url, &profile).is_err());
+        assert!(launch_target_action(&url, &ActionProfiles::default().editor).is_err());
+    }
+
+    #[test]
+    fn local_file_open_command_keeps_the_filename_literal_and_never_deletes_it() {
+        let root = std::env::temp_dir().join(format!(
+            "herdr-local-open-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).expect("directory");
+        let path = root.join("space ' $(touch NOT-RUN).txt");
+        std::fs::write(&path, b"preserve me").expect("file");
+        let command = local_file_open_command(&path).expect("command");
+        assert_eq!(command.get_program(), "open");
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            vec![OsStr::new("--"), path.as_os_str()]
+        );
+        assert_eq!(std::fs::read(&path).expect("file remains"), b"preserve me");
+        assert!(local_file_open_command(&root).is_err());
+        let link = root.join("symlink.txt");
+        std::os::unix::fs::symlink(&path, &link).expect("link");
+        assert!(local_file_open_command(&link).is_err());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
 
     #[test]
     fn nofile_target_raises_low_soft_limit_to_cap_when_hard_is_unlimited() {

@@ -23,6 +23,9 @@ pub(crate) struct HandoffRuntimeState {
     pub keyboard_protocol_ansi: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_state: Option<crate::pane::InputState>,
+    /// DEC private mode 25; older senders leave the new terminal's default intact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor_visible: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

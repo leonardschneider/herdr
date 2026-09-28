@@ -556,6 +556,11 @@ impl ClientShellState {
                 | PendingEndpointKind::SelectionCopy
                 | PendingEndpointKind::PaneScroll { .. }
                 | PendingEndpointKind::WordSelection { .. }
+                | PendingEndpointKind::PaneFileResolve { .. }
+                | PendingEndpointKind::ActionSettingsGet { .. }
+                | PendingEndpointKind::ActionSettingsReload { .. }
+                | PendingEndpointKind::ActionSettingsSet { .. }
+                | PendingEndpointKind::TargetAction { .. }
                 | PendingEndpointKind::PaneLinkActivate { .. }
                 | PendingEndpointKind::CopyMotion { .. }
                 | PendingEndpointKind::CopySearch { .. },

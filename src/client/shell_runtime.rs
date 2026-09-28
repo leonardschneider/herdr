@@ -1,11 +1,53 @@
 use super::*;
 
+pub(super) struct DetachedClientChild {
+    child: std::process::Child,
+    // Only configured target actions opt into user-visible exit diagnostics.
+    executable: Option<String>,
+}
+
+pub(super) fn reap_detached_children(
+    children: &mut Vec<DetachedClientChild>,
+    mut shell: Option<&mut shell::ClientShellState>,
+) -> bool {
+    let mut repaint = false;
+    children.retain_mut(|tracked| {
+        match tracked.child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    if let Some(executable) = tracked.executable.as_ref() {
+                        if let Some(shell) = shell.as_deref_mut() {
+                            repaint |= shell.report_target_error(format!(
+                                "{executable} exited unsuccessfully ({status})"
+                            ));
+                        }
+                    }
+                }
+                false
+            }
+            Ok(None) => true,
+            Err(error) => {
+                // Report observation failure once, but retain the child for later reaping.
+                if let Some(executable) = tracked.executable.take() {
+                    if let Some(shell) = shell.as_deref_mut() {
+                        repaint |= shell.report_target_error(format!(
+                            "Could not observe {executable}: {error}"
+                        ));
+                    }
+                }
+                true
+            }
+        }
+    });
+    repaint
+}
+
 pub(super) fn dispatch_client_shell_actions(
     actions: Vec<shell::ClientShellAction>,
     endpoint_commands: &mut endpoint_commands::EndpointCommands,
     endpoints: &mut endpoint::EndpointRegistry,
     mut shell: Option<&mut shell::ClientShellState>,
-    detached_process_children: &mut Vec<std::process::Child>,
+    detached_process_children: &mut Vec<DetachedClientChild>,
     event_tx: &tokio::sync::mpsc::Sender<ClientLoopEvent>,
 ) -> Result<(Vec<crossterm::event::MouseEvent>, bool), ClientError> {
     let mut replay_mouse = Vec::new();
@@ -41,9 +83,46 @@ pub(super) fn dispatch_client_shell_actions(
             shell::ClientShellAction::OpenSafeWebUrl(url) => {
                 if crate::app::actions::safe_web_url(&url).is_some() {
                     match crate::platform::open_url(&url) {
-                        Ok(Some(child)) => detached_process_children.push(child),
+                        Ok(Some(child)) => detached_process_children.push(DetachedClientChild {
+                            child,
+                            executable: None,
+                        }),
                         Ok(None) => {}
                         Err(err) => warn!(err = %err, url = %url, "failed to open pane URL"),
+                    }
+                }
+            }
+            shell::ClientShellAction::LaunchTargetAction { context, permit } => {
+                let transport_current = context.endpoint_id.is_local()
+                    && endpoints.active_id() == &context.endpoint_id
+                    && endpoints.active_surface_available()
+                    && endpoints
+                        .connection(&context.endpoint_id)
+                        .is_some_and(|connection| {
+                            context.connection_generation == Some(connection.generation)
+                                && connection
+                                    .negotiation
+                                    .supports_method("pane.target.authorize")
+                        });
+                if let Some(shell) = shell.as_deref_mut() {
+                    let authorized = shell.consume_target_permit(&context, &permit);
+                    if transport_current && authorized {
+                        match crate::platform::launch_target_action(&permit.target, &permit.profile)
+                        {
+                            Ok(Some(child)) => {
+                                detached_process_children.push(DetachedClientChild {
+                                    child,
+                                    executable: Some(permit.profile.executable.clone()),
+                                })
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                repaint |= shell.report_target_error(format!(
+                                    "Could not launch {}: {error}",
+                                    permit.profile.executable
+                                ));
+                            }
+                        }
                     }
                 }
             }
@@ -731,4 +810,42 @@ pub(super) fn finish_client_shell_input(
         }
     }
     Ok(false)
+}
+
+#[cfg(all(test, unix))]
+mod target_child_tests {
+    use super::*;
+
+    #[test]
+    fn configured_child_nonzero_exit_reports_once_without_retry() {
+        for (label, code, expected_notice) in [
+            (Some("owned-test-command"), "exit 7", true),
+            (Some("owned-test-command"), "exit 0", false),
+            (None, "exit 7", false),
+        ] {
+            let mut child = std::process::Command::new("/bin/sh")
+                .args(["-c", code])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .expect("isolated exit-only child");
+            let _ = child
+                .wait()
+                .expect("wait only in test; production uses try_wait");
+            let mut children = vec![DetachedClientChild {
+                child,
+                executable: label.map(str::to_owned),
+            }];
+            let mut shell = shell::ClientShellState::new(shell::ClientShellConfig::from_config(
+                &crate::config::Config::default(),
+            ));
+            assert_eq!(
+                reap_detached_children(&mut children, Some(&mut shell)),
+                expected_notice
+            );
+            assert!(children.is_empty());
+            assert!(!reap_detached_children(&mut children, Some(&mut shell)));
+        }
+    }
 }

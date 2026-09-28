@@ -1222,6 +1222,104 @@
     },
     "request": {
       "$defs": {
+        "ActionId": {
+          "enum": [
+            "editor",
+            "system_opener"
+          ],
+          "type": "string"
+        },
+        "ActionProfile": {
+          "additionalProperties": false,
+          "properties": {
+            "applies_to": {
+              "$ref": "#/schemas/request/$defs/Applicability"
+            },
+            "arguments": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "executable": {
+              "type": "string"
+            },
+            "launch_mode": {
+              "$ref": "#/schemas/request/$defs/LaunchMode"
+            }
+          },
+          "required": [
+            "enabled",
+            "executable",
+            "arguments",
+            "launch_mode",
+            "applies_to"
+          ],
+          "type": "object"
+        },
+        "ActionProfiles": {
+          "additionalProperties": false,
+          "properties": {
+            "editor": {
+              "$ref": "#/schemas/request/$defs/ActionProfile",
+              "default": {
+                "applies_to": {
+                  "other_files": false,
+                  "text_files": true,
+                  "urls": false
+                },
+                "arguments": [
+                  "-c",
+                  "call cursor({line},{column})",
+                  "--",
+                  "{path}"
+                ],
+                "enabled": true,
+                "executable": "nvim",
+                "launch_mode": "pane"
+              }
+            },
+            "system_opener": {
+              "$ref": "#/schemas/request/$defs/ActionProfile",
+              "default": {
+                "applies_to": {
+                  "other_files": true,
+                  "text_files": true,
+                  "urls": true
+                },
+                "arguments": [
+                  "--",
+                  "{target}"
+                ],
+                "enabled": true,
+                "executable": "open",
+                "launch_mode": "external"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "ActionRevision": {
+          "additionalProperties": false,
+          "properties": {
+            "boot_id": {
+              "type": "string"
+            },
+            "counter": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "boot_id",
+            "counter"
+          ],
+          "type": "object"
+        },
         "AgentPromptParams": {
           "properties": {
             "target": {
@@ -1689,6 +1787,26 @@
           ],
           "type": "object"
         },
+        "Applicability": {
+          "additionalProperties": false,
+          "properties": {
+            "other_files": {
+              "type": "boolean"
+            },
+            "text_files": {
+              "type": "boolean"
+            },
+            "urls": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "text_files",
+            "other_files",
+            "urls"
+          ],
+          "type": "object"
+        },
         "ClientShellSurfaceSetParams": {
           "description": "Updates whether the requesting client shell receives and controls pane presentation.",
           "properties": {
@@ -2145,10 +2263,37 @@
           ],
           "type": "object"
         },
+        "FileUrlActionsSetParams": {
+          "additionalProperties": false,
+          "properties": {
+            "expected_revision": {
+              "$ref": "#/schemas/request/$defs/ActionRevision"
+            },
+            "profiles": {
+              "$ref": "#/schemas/request/$defs/ActionProfiles"
+            }
+          },
+          "required": [
+            "expected_revision",
+            "profiles"
+          ],
+          "type": "object"
+        },
         "IntegrationInstallParams": {
           "properties": {
             "target": {
               "$ref": "#/schemas/request/$defs/IntegrationTarget"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "type": "object"
+        },
+        "IntegrationInstallParamsV2": {
+          "properties": {
+            "target": {
+              "type": "string"
             }
           },
           "required": [
@@ -2188,6 +2333,13 @@
             "target"
           ],
           "type": "object"
+        },
+        "LaunchMode": {
+          "enum": [
+            "pane",
+            "external"
+          ],
+          "type": "string"
         },
         "LayoutApplyParams": {
           "properties": {
@@ -2573,6 +2725,58 @@
               ]
             }
           },
+          "type": "object"
+        },
+        "PaneFileEditParams": {
+          "properties": {
+            "pane_id": {
+              "type": "string"
+            },
+            "target_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pane_id",
+            "target_id"
+          ],
+          "type": "object"
+        },
+        "PaneFileResolveParams": {
+          "properties": {
+            "col": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "content_revision": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "offset_from_bottom": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pane_id": {
+              "type": "string"
+            },
+            "viewport_row": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pane_id",
+            "viewport_row",
+            "col",
+            "content_revision",
+            "offset_from_bottom"
+          ],
           "type": "object"
         },
         "PaneFocusDirectionParams": {
@@ -3381,6 +3585,72 @@
           },
           "required": [
             "pane_id"
+          ],
+          "type": "object"
+        },
+        "PaneTargetActionParams": {
+          "additionalProperties": false,
+          "properties": {
+            "action_id": {
+              "$ref": "#/schemas/request/$defs/ActionId"
+            },
+            "pane_id": {
+              "type": "string"
+            },
+            "revision": {
+              "$ref": "#/schemas/request/$defs/ActionRevision"
+            },
+            "target_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "pane_id",
+            "target_id",
+            "action_id",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "PaneTargetResolveParams": {
+          "additionalProperties": false,
+          "properties": {
+            "col": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "content_revision": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "expected_revision": {
+              "$ref": "#/schemas/request/$defs/ActionRevision"
+            },
+            "offset_from_bottom": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pane_id": {
+              "type": "string"
+            },
+            "viewport_row": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pane_id",
+            "viewport_row",
+            "col",
+            "content_revision",
+            "offset_from_bottom",
+            "expected_revision"
           ],
           "type": "object"
         },
@@ -5870,6 +6140,118 @@
         {
           "properties": {
             "method": {
+              "const": "file_url_actions.get",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/EmptyParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "file_url_actions.set",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/FileUrlActionsSetParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.target.resolve",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneTargetResolveParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.target.execute",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneTargetActionParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.target.authorize",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneTargetActionParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.file.resolve",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneFileResolveParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "pane.file.edit",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/PaneFileEditParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
               "const": "pane.rename",
               "type": "string"
             },
@@ -6179,6 +6561,38 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/IntegrationInstallParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "integration.list.v2",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/EmptyParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "integration.install.v2",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/IntegrationInstallParamsV2"
             }
           },
           "required": [
@@ -6606,6 +7020,152 @@
     },
     "success_response": {
       "$defs": {
+        "ActionId": {
+          "enum": [
+            "editor",
+            "system_opener"
+          ],
+          "type": "string"
+        },
+        "ActionPermit": {
+          "properties": {
+            "action_id": {
+              "$ref": "#/schemas/success_response/$defs/ActionId"
+            },
+            "permit_id": {
+              "type": "string"
+            },
+            "profile": {
+              "$ref": "#/schemas/success_response/$defs/ActionProfile"
+            },
+            "revision": {
+              "$ref": "#/schemas/success_response/$defs/ActionRevision"
+            },
+            "target": {
+              "$ref": "#/schemas/success_response/$defs/TargetValue"
+            }
+          },
+          "required": [
+            "permit_id",
+            "action_id",
+            "revision",
+            "target",
+            "profile"
+          ],
+          "type": "object"
+        },
+        "ActionProfile": {
+          "additionalProperties": false,
+          "properties": {
+            "applies_to": {
+              "$ref": "#/schemas/success_response/$defs/Applicability"
+            },
+            "arguments": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "executable": {
+              "type": "string"
+            },
+            "launch_mode": {
+              "$ref": "#/schemas/success_response/$defs/LaunchMode"
+            }
+          },
+          "required": [
+            "enabled",
+            "executable",
+            "arguments",
+            "launch_mode",
+            "applies_to"
+          ],
+          "type": "object"
+        },
+        "ActionProfiles": {
+          "additionalProperties": false,
+          "properties": {
+            "editor": {
+              "$ref": "#/schemas/success_response/$defs/ActionProfile",
+              "default": {
+                "applies_to": {
+                  "other_files": false,
+                  "text_files": true,
+                  "urls": false
+                },
+                "arguments": [
+                  "-c",
+                  "call cursor({line},{column})",
+                  "--",
+                  "{path}"
+                ],
+                "enabled": true,
+                "executable": "nvim",
+                "launch_mode": "pane"
+              }
+            },
+            "system_opener": {
+              "$ref": "#/schemas/success_response/$defs/ActionProfile",
+              "default": {
+                "applies_to": {
+                  "other_files": true,
+                  "text_files": true,
+                  "urls": true
+                },
+                "arguments": [
+                  "--",
+                  "{target}"
+                ],
+                "enabled": true,
+                "executable": "open",
+                "launch_mode": "external"
+              }
+            }
+          },
+          "type": "object"
+        },
+        "ActionRevision": {
+          "additionalProperties": false,
+          "properties": {
+            "boot_id": {
+              "type": "string"
+            },
+            "counter": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "boot_id",
+            "counter"
+          ],
+          "type": "object"
+        },
+        "ActionSettings": {
+          "properties": {
+            "diagnostic": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "profiles": {
+              "$ref": "#/schemas/success_response/$defs/ActionProfiles"
+            },
+            "revision": {
+              "$ref": "#/schemas/success_response/$defs/ActionRevision"
+            }
+          },
+          "required": [
+            "revision",
+            "profiles"
+          ],
+          "type": "object"
+        },
         "AgentInfo": {
           "properties": {
             "agent": {
@@ -6832,6 +7392,26 @@
             "unknown"
           ],
           "type": "string"
+        },
+        "Applicability": {
+          "additionalProperties": false,
+          "properties": {
+            "other_files": {
+              "type": "boolean"
+            },
+            "text_files": {
+              "type": "boolean"
+            },
+            "urls": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "text_files",
+            "other_files",
+            "urls"
+          ],
+          "type": "object"
         },
         "ClientWindowTitleReason": {
           "enum": [
@@ -7668,6 +8248,33 @@
           ],
           "type": "object"
         },
+        "IntegrationInfoV2": {
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "state": {
+              "$ref": "#/schemas/success_response/$defs/IntegrationState"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "label",
+            "command",
+            "available",
+            "state"
+          ],
+          "type": "object"
+        },
         "IntegrationInstallResult": {
           "properties": {
             "messages": {
@@ -7725,6 +8332,13 @@
             "messages"
           ],
           "type": "object"
+        },
+        "LaunchMode": {
+          "enum": [
+            "pane",
+            "external"
+          ],
+          "type": "string"
         },
         "LayoutDescription": {
           "properties": {
@@ -7878,6 +8492,49 @@
             "up",
             "down",
             "layout"
+          ],
+          "type": "object"
+        },
+        "PaneFileKind": {
+          "enum": [
+            "text",
+            "binary",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "PaneFileTarget": {
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "kind": {
+              "$ref": "#/schemas/success_response/$defs/PaneFileKind"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "target_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target_id",
+            "path",
+            "kind"
           ],
           "type": "object"
         },
@@ -9187,6 +9844,39 @@
           ],
           "type": "string"
         },
+        "ResolvedTarget": {
+          "properties": {
+            "actions": {
+              "items": {
+                "$ref": "#/schemas/success_response/$defs/ActionId"
+              },
+              "type": "array"
+            },
+            "highlight": {
+              "description": "Optional presentation metadata for the exact clicked source revision.\nIt is never an execution identity and is absent on older endpoints.",
+              "items": {
+                "$ref": "#/schemas/success_response/$defs/TargetCellSpan"
+              },
+              "type": "array"
+            },
+            "revision": {
+              "$ref": "#/schemas/success_response/$defs/ActionRevision"
+            },
+            "target": {
+              "$ref": "#/schemas/success_response/$defs/TargetValue"
+            },
+            "target_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target_id",
+            "target",
+            "revision",
+            "actions"
+          ],
+          "type": "object"
+        },
         "ResponseResult": {
           "oneOf": [
             {
@@ -10174,6 +10864,45 @@
             },
             {
               "properties": {
+                "integrations": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/IntegrationInfoV2"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "const": "integration_list_v2",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "integrations"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "details": {
+                  "$ref": "#/schemas/success_response/$defs/IntegrationInstallResult"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "integration_install_v2",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "target",
+                "details"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
                 "details": {
                   "$ref": "#/schemas/success_response/$defs/IntegrationUninstallResult"
                 },
@@ -10371,6 +11100,114 @@
                 "action",
                 "context",
                 "log"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "settings": {
+                  "$ref": "#/schemas/success_response/$defs/ActionSettings"
+                },
+                "type": {
+                  "const": "file_url_actions_settings",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "settings"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "target": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/schemas/success_response/$defs/ResolvedTarget"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": {
+                  "const": "pane_target_resolved",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "pane_target_executed",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "pane_id"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "permit": {
+                  "$ref": "#/schemas/success_response/$defs/ActionPermit"
+                },
+                "type": {
+                  "const": "pane_target_authorized",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "permit"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "target": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/schemas/success_response/$defs/PaneFileTarget"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": {
+                  "const": "pane_file_resolved",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "pane_file_edited",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "pane_id"
               ],
               "type": "object"
             },
@@ -10672,6 +11509,102 @@
             "agent_status"
           ],
           "type": "object"
+        },
+        "TargetCellSpan": {
+          "properties": {
+            "end_col": {
+              "description": "Exclusive end column, measured in terminal cells rather than UTF-8 bytes.",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "row": {
+              "description": "Row in the resolved viewport, not an absolute scrollback coordinate.",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start_col": {
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "row",
+            "start_col",
+            "end_col"
+          ],
+          "type": "object"
+        },
+        "TargetFileKind": {
+          "enum": [
+            "text",
+            "binary",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "TargetValue": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "column": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "file_kind": {
+                  "$ref": "#/schemas/success_response/$defs/TargetFileKind"
+                },
+                "kind": {
+                  "const": "file",
+                  "type": "string"
+                },
+                "line": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "path",
+                "file_kind"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "url",
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "url"
+              ],
+              "type": "object"
+            }
+          ]
         },
         "WorkspaceInfo": {
           "properties": {

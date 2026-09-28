@@ -1314,6 +1314,8 @@ async fn run_client_loop(
                         }
                     }
                     ServerMessage::PaneSurfacePatch(patch) => {
+                        let file_surface_revision =
+                            (patch.projection_revision, patch.surface_revision);
                         let patch_started = crate::render_prof::timer();
                         let apply_started = crate::render_prof::timer();
                         let outcome = state
@@ -1327,7 +1329,15 @@ async fn run_client_loop(
                         let compose_fallback = match outcome {
                             Some(shell::ClientPaneSurfacePatchOutcome::Applied(Some(patch))) => {
                                 match state.present_surface_patch(patch) {
-                                    Ok(presented) => !presented,
+                                    Ok(true) => {
+                                        if let Some(shell) = state.shell.as_mut() {
+                                            shell.acknowledge_presented_file_surface(
+                                                file_surface_revision,
+                                            );
+                                        }
+                                        false
+                                    }
+                                    Ok(false) => true,
                                     Err(error) => {
                                         warn!(%error, "failed to present retained pane surface patch");
                                         state.request_repaint();
@@ -1936,9 +1946,10 @@ async fn run_client_loop(
                 if let Ok(mut matcher) = state.direct_graphics_response.lock() {
                     matcher.expire();
                 }
-                state
-                    .detached_process_children
-                    .retain_mut(|child| child.try_wait().ok().flatten().is_none());
+                let child_repaint = shell_runtime::reap_detached_children(
+                    &mut state.detached_process_children,
+                    state.shell.as_mut(),
+                );
                 write_stream.tick_health(now);
                 for failure in write_stream.take_failures() {
                     if write_stream.connection(&failure.endpoint_id).is_some()
@@ -2009,6 +2020,8 @@ async fn run_client_loop(
                     let (effects, outcome, frame) = {
                         let shell = state.shell.as_mut().expect("checked shell mode");
                         let mut outcome = shell.tick_selection_autoscroll(now);
+                        outcome.repaint |= child_repaint;
+                        shell.tick_action_settings(now, &mut outcome);
                         for expired in expired_endpoints {
                             if !shell.endpoint_is_active(&expired.endpoint_id) {
                                 continue;

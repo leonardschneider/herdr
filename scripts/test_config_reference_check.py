@@ -11,6 +11,7 @@ from scripts.config_reference_check import (
     check,
     collect_entries,
     collect_keys,
+    model_paths,
     parse_file,
     parse_model,
 )
@@ -241,6 +242,17 @@ class CheckTests(unittest.TestCase):
 
 
 class RealModelTests(unittest.TestCase):
+    def test_shared_action_profiles_are_expanded_into_individual_keys(self) -> None:
+        entries = {
+            entry["key"]: entry
+            for entry in collect_entries(parse_model(model_paths(Path("src/config"))))
+        }
+        self.assertNotIn("file_url_actions", entries)
+        for profile in ("editor", "system_opener"):
+            for key in ("enabled", "executable", "arguments", "launch_mode", "applies_to.text_files", "applies_to.other_files", "applies_to.urls"):
+                self.assertIn(f"file_url_actions.{profile}.{key}", entries)
+            self.assertEqual(entries[f"file_url_actions.{profile}.launch_mode"]["values"], ["pane", "external"])
+
     def test_real_config_model_parses_and_yields_keys(self) -> None:
         model = parse_model(sorted(Path("src/config").glob("*.rs")))
         keys = collect_keys(model)

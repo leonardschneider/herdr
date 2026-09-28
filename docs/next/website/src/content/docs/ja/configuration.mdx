@@ -233,6 +233,38 @@ description = "apply layout"
 
 Windows では、カスタムコマンド文字列に `cmd.exe /d /c` が使われるため、環境変数には `%HERDR_BIN_PATH%` 構文を使います。PowerShell 構文を実行するには、たとえば `powershell.exe -NoProfile -Command "..."` のように明示的に呼び出してください。
 
+## ファイルと URL の操作
+
+設定 (`prefix+s`) のファイル/URL セクションでは、Editor と System opener をまとめて編集します。Save は検証して保存し、Cancel は既存設定を変更しません。固定の実行ファイル、個別の引数、`pane` / `external`、対象の種類を指定します。設定はローカルランタイムが管理します。同時編集や外部変更との競合時は、上書きせずリロードが必要です。
+
+次の完全な設定例は、テキストファイルに GUI エディタ、ファイルと Web URL に macOS `open` を使います。
+
+```toml
+[file_url_actions.editor]
+enabled = true
+executable = "code"
+arguments = ["--goto", "{path}:{line}:{column}"]
+launch_mode = "external"
+[file_url_actions.editor.applies_to]
+text_files = true
+other_files = false
+urls = false
+
+[file_url_actions.system_opener]
+enabled = true
+executable = "open"
+arguments = ["--", "{target}"]
+launch_mode = "external"
+[file_url_actions.system_opener.applies_to]
+text_files = true
+other_files = true
+urls = true
+```
+
+セクションを省略すると、エディタは新しいペインの Neovim です。`{target}` は解決済みパスまたは元の URL、`{path}` / `{url}` は種類別の値です。ファイルの `{line}` / `{column}` は未指定時に 1 になります。リテラルの波括弧は `{{` / `}}` と書きます。URL を有効にした設定ではファイル専用プレースホルダーを使えません。環境変数展開、暗黙のシェル評価、URL 内容のダウンロードはしません。
+
+独自プログラムは利用者の権限で実行される信頼済み設定です。対象をコードとして評価せず、データ引数として渡してください。一般的なインタープリタへの検査は任意のプログラムのサンドボックスではありません。実行失敗時に別のコマンドへ自動で切り替えません。新しいクライアントとサーバーの両方が必要で、バイナリの配置だけでは動作中の永続セッションを更新しません。
+
 ## テーマ
 
 組み込みテーマを選びます:

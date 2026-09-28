@@ -4,7 +4,10 @@ impl ClientContextMenuOverlay {
     pub(super) fn items(&self) -> Vec<ClientContextMenuItem> {
         use ClientContextMenuAction as Action;
 
-        let item = |label, action| ClientContextMenuItem { label, action };
+        let item = |label: &str, action| ClientContextMenuItem {
+            label: label.to_owned(),
+            action,
+        };
         match &self.target {
             ClientContextMenuTarget::Workspace { is_git: false, .. } => {
                 vec![item("Rename", Action::Rename), item("Close", Action::Close)]
@@ -50,9 +53,30 @@ impl ClientContextMenuOverlay {
                 source_pane_id,
                 has_manual_label,
                 right_click_passthrough,
+                file,
                 ..
             } => {
-                let mut items = vec![item("Rename pane", Action::RenamePane)];
+                let mut items = Vec::new();
+                if let Some(file) = file {
+                    if file.phase != TargetMenuPhase::Ready {
+                        return items;
+                    }
+                    if let Some(target) = &file.target {
+                        for id in &target.actions {
+                            let (name, action) = match id {
+                                crate::file_url_actions::ActionId::Editor => {
+                                    ("Editor", Action::EditFile)
+                                }
+                                crate::file_url_actions::ActionId::SystemOpener => {
+                                    ("System opener", Action::OpenFile)
+                                }
+                            };
+                            items.push(item(name, action));
+                        }
+                    }
+                    return items;
+                }
+                items.push(item("Rename pane", Action::RenamePane));
                 if *has_manual_label {
                     items.push(item("Clear pane name", Action::ClearPaneName));
                 }
@@ -160,6 +184,7 @@ impl ClientShellState {
                 source_pane_id,
                 has_manual_label: pane.label.is_some(),
                 right_click_passthrough: pane.right_click_passthrough,
+                file: None,
             },
             x,
             y,
@@ -191,6 +216,33 @@ impl ClientShellState {
             outcome.repaint = true;
             return;
         };
+        if matches!(
+            action,
+            ClientContextMenuAction::OpenFile | ClientContextMenuAction::EditFile
+        ) {
+            if let ClientContextMenuTarget::Pane {
+                file: Some(file), ..
+            } = &menu.target
+            {
+                if file.phase == TargetMenuPhase::Ready
+                    && self.ready_file_context_is_current(&file.context).is_none()
+                {
+                    // Keep the frozen target while the matching frame catches up.
+                    // A later explicit click may activate it; never auto-replay this click.
+                    self.overlay = Some(ClientShellOverlay::ContextMenu(menu));
+                    outcome.repaint = true;
+                    return;
+                }
+            }
+            if let ClientContextMenuTarget::Pane {
+                file: Some(file), ..
+            } = menu.target
+            {
+                self.activate_file_context_action(*file, action, outcome);
+            }
+            outcome.repaint = true;
+            return;
+        }
         match menu.target {
             ClientContextMenuTarget::Workspace { workspace_id, .. } => {
                 self.activate_workspace_context_action(workspace_id, action, outcome)

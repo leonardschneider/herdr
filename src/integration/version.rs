@@ -8,10 +8,10 @@ pub(crate) struct AgentVersionRequirement {
 }
 
 pub(crate) fn agent_version_requirement(
-    target: crate::api::schema::IntegrationTarget,
+    target: crate::integration::IntegrationTarget,
 ) -> Option<AgentVersionRequirement> {
     match target {
-        crate::api::schema::IntegrationTarget::Kimi => Some(AgentVersionRequirement {
+        crate::integration::IntegrationTarget::Kimi => Some(AgentVersionRequirement {
             label: "kimi code",
             binary: "kimi",
             args: &["--version"],

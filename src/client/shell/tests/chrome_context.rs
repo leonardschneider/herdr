@@ -243,8 +243,15 @@ fn context_menus_capture_stable_targets_and_route_actions() {
     ));
 
     state.overlay = None;
+    // This is a chrome-menu test: create a real top border rather than
+    // right-clicking terminal content (which no longer has a generic menu).
+    let mut bordered = surface();
+    bordered.panes[0].inner_rect.y += 1;
+    bordered.panes[0].inner_rect.height -= 1;
+    state.set_pane_surface(bordered);
     state.compose(106, 20).expect("composed frame");
     let pane = state.hits.panes[0].rect;
+    assert!(pane.y < state.hits.panes[0].inner_rect.y);
     state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Right),
         column: pane.x + 1,

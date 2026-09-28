@@ -1,5 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
+mod action_store;
+pub(crate) use action_store::ActionStore;
 mod io;
 mod keybinds;
 mod model;
@@ -123,6 +125,12 @@ impl Config {
             .chain(window_title_diagnostics(&self.ui.window_title))
             .chain(self.invalid_sidebar_bounds_diagnostic())
             .chain(self.invalid_headless_size_diagnostic())
+            .chain(
+                self.file_url_actions
+                    .validate()
+                    .err()
+                    .map(|error| format!("invalid file/URL actions: {error}")),
+            )
             .collect()
     }
 

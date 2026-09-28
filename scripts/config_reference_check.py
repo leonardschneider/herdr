@@ -74,6 +74,16 @@ def parse_model(paths: list[Path]) -> Model:
     return model
 
 
+def model_paths(model_root: Path) -> list[Path]:
+    paths = sorted(model_root.glob("*.rs"))
+    # Action profiles are shared by config and the optional JSON API, but are
+    # deliberately kept out of wire-reachable config types.
+    shared_actions = model_root.parent / "file_url_actions.rs"
+    if shared_actions.is_file():
+        paths.append(shared_actions)
+    return paths
+
+
 def parse_file(text: str, model: Model) -> None:
     lines = text.splitlines()
     index = 0
@@ -215,7 +225,10 @@ def strip_wrappers(rust_type: str) -> tuple[str, bool]:
             is_vec = True
         current = match.group(2)
     # std::collections::BTreeSet<...> and friends stay as-is; they are leaves.
-    return current.strip(), is_vec
+    current = current.strip()
+    # Resolve qualified concrete names without stripping generic leaf types.
+    qualified = re.fullmatch(r"(?:[A-Za-z_]\w*::)*([A-Za-z_]\w*)", current)
+    return (qualified.group(1) if qualified else current), is_vec
 
 
 def collect_keys(model: Model) -> set[str]:
@@ -263,7 +276,7 @@ def reference_entries(reference_path: Path) -> tuple[dict[str, dict], list[str]]
 
 
 def check(model_root: Path, reference_path: Path) -> list[str]:
-    model = parse_model(sorted(model_root.glob("*.rs")))
+    model = parse_model(model_paths(model_root))
     code_entries = {entry["key"]: entry for entry in collect_entries(model)}
     doc_entries, errors = reference_entries(reference_path)
     code_keys = set(code_entries)
@@ -304,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
 
     if args.emit:
-        model = parse_model(sorted(args.model_root.glob("*.rs")))
+        model = parse_model(model_paths(args.model_root))
         print(json.dumps(collect_entries(model), indent=2))
         return 0
 

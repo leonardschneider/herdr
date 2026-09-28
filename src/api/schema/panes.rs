@@ -43,6 +43,39 @@ pub struct PaneSplitParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneFileResolveParams {
+    pub pane_id: String,
+    pub viewport_row: u16,
+    pub col: u16,
+    pub content_revision: u64,
+    pub offset_from_bottom: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneFileEditParams {
+    pub pane_id: String,
+    pub target_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PaneFileKind {
+    Text,
+    Binary,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PaneFileTarget {
+    pub target_id: String,
+    pub path: String,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+    pub kind: PaneFileKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PaneInputSetParams {
     pub pane_id: String,
     pub right_click: PaneRightClickTarget,

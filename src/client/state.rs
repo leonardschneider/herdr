@@ -39,7 +39,7 @@ pub(super) struct ClientState {
     /// an acknowledged target snapshot/surface pair commits.
     pub(super) presentation_frozen: bool,
     pub(super) draw_host_cursor: bool,
-    pub(super) detached_process_children: Vec<std::process::Child>,
+    pub(super) detached_process_children: Vec<shell_runtime::DetachedClientChild>,
     pub(super) shell: Option<shell::ClientShellState>,
 }
 

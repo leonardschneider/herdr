@@ -236,6 +236,13 @@ pub enum ResponseResult {
         target: IntegrationTarget,
         details: IntegrationInstallResult,
     },
+    IntegrationListV2 {
+        integrations: Vec<super::integrations::IntegrationInfoV2>,
+    },
+    IntegrationInstallV2 {
+        target: String,
+        details: IntegrationInstallResult,
+    },
     IntegrationUninstall {
         target: IntegrationTarget,
         details: IntegrationUninstallResult,
@@ -273,6 +280,24 @@ pub enum ResponseResult {
         action: PluginActionInfo,
         context: PluginInvocationContext,
         log: PluginCommandLogInfo,
+    },
+    FileUrlActionsSettings {
+        settings: crate::file_url_actions::ActionSettings,
+    },
+    PaneTargetResolved {
+        target: Option<crate::file_url_actions::ResolvedTarget>,
+    },
+    PaneTargetExecuted {
+        pane_id: String,
+    },
+    PaneTargetAuthorized {
+        permit: crate::file_url_actions::ActionPermit,
+    },
+    PaneFileResolved {
+        target: Option<super::panes::PaneFileTarget>,
+    },
+    PaneFileEdited {
+        pane_id: String,
     },
     PaneLinkActivated {
         #[serde(default, skip_serializing_if = "Option::is_none")]

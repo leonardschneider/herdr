@@ -237,6 +237,38 @@ Custom commands receive `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ACTIVE_WOR
 
 On Windows, custom command strings use `cmd.exe /d /c`, so environment variables use `%HERDR_BIN_PATH%` syntax. To run PowerShell syntax, invoke it explicitly, for example `powershell.exe -NoProfile -Command "..."`.
 
+## File and URL actions
+
+The file/URL settings section (`prefix+s`) edits the Editor and System opener profiles as one draft. Save validates and persists it; Cancel leaves the saved configuration unchanged. Choose a fixed executable, individually editable arguments, `pane` or `external` launch mode, and the applicable target kinds. The local runtime owns this configuration; concurrent or externally modified settings require a reload instead of silently overwriting newer changes.
+
+For example, these complete profiles use a GUI editor for text files and macOS `open` for files and supported web URLs:
+
+```toml
+[file_url_actions.editor]
+enabled = true
+executable = "code"
+arguments = ["--goto", "{path}:{line}:{column}"]
+launch_mode = "external"
+[file_url_actions.editor.applies_to]
+text_files = true
+other_files = false
+urls = false
+
+[file_url_actions.system_opener]
+enabled = true
+executable = "open"
+arguments = ["--", "{target}"]
+launch_mode = "external"
+[file_url_actions.system_opener.applies_to]
+text_files = true
+other_files = true
+urls = true
+```
+
+With no section, the editor defaults to Neovim in a new pane. `{target}` is the canonical file path or original URL; `{path}` and `{url}` are kind-specific. `{line}` and `{column}` are positive file positions, defaulting to 1. Use `{{` and `}}` for literal braces. File-only placeholders cannot be used in profiles enabled for URLs. Herdr does not expand environment variables, evaluate a shell command, or download URL content.
+
+Custom programs/scripts run with your permissions and remain trusted configuration. Pass target text as data arguments; never insert it into interpreter code or evaluate it in a script. Guards for common interpreter flags are not a sandbox for arbitrary programs. Missing executables and launch failures do not silently fall back to another command. This feature requires the new client and server; installing a new binary alone does not replace an already-running persistent session.
+
 ## Theme
 
 Choose a built-in theme:

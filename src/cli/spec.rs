@@ -895,7 +895,7 @@ fn integration_target_arg() -> Arg {
 }
 
 fn integration_target_values() -> Vec<&'static str> {
-    crate::api::schema::IntegrationTarget::ALL
+    crate::integration::IntegrationTarget::ALL
         .into_iter()
         .map(crate::integration::integration_target_label)
         .collect()
@@ -1128,7 +1128,7 @@ mod tests {
                 .unwrap()
                 .map(|value| value.get_name().to_string())
                 .collect::<Vec<_>>(),
-            crate::api::schema::IntegrationTarget::ALL
+            crate::integration::IntegrationTarget::ALL
                 .map(crate::integration::integration_target_label)
                 .map(str::to_string)
         );

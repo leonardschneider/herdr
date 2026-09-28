@@ -1367,6 +1367,10 @@ impl ClientShellState {
             }
             return;
         }
+        if self.target_menu().is_some() && mouse.kind == MouseEventKind::Down(MouseButton::Right) {
+            self.close_target_menu();
+            outcome.repaint = true;
+        }
         if matches!(self.overlay, Some(ClientShellOverlay::ContextMenu(_))) {
             let row_hit = self
                 .hits
@@ -1387,6 +1391,7 @@ impl ClientShellState {
                     if let Some((_, index)) = row_hit {
                         self.activate_context_menu_item(index, outcome);
                     } else {
+                        self.close_target_menu();
                         self.overlay = None;
                         outcome.repaint = true;
                     }
@@ -1473,6 +1478,24 @@ impl ClientShellState {
             return;
         }
         if matches!(self.overlay, Some(ClientShellOverlay::Settings(_))) {
+            if self.action_editor_active()
+                && matches!(
+                    mouse.kind,
+                    MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                )
+            {
+                if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                    if let Some(draft) = settings.action_draft.as_mut() {
+                        draft.editing = false;
+                    }
+                }
+                self.move_settings_selection(if mouse.kind == MouseEventKind::ScrollUp {
+                    -1
+                } else {
+                    1
+                });
+                outcome.repaint = true;
+            }
             if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
                 if let Some((_, section)) = self
                     .hits
@@ -1490,6 +1513,9 @@ impl ClientShellState {
                     .copied()
                 {
                     self.select_settings_choice(index);
+                    if self.action_editor_active() {
+                        self.activate_action_editor_row(outcome);
+                    }
                     let immediate = matches!(
                         self.overlay,
                         Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
@@ -1812,7 +1838,21 @@ impl ClientShellState {
                     .find(|hit| super::contains(hit.rect, point))
                     .map(|hit| hit.pane_id.clone());
                 if let Some(pane_id) = pane_id {
-                    self.open_pane_context_menu(pane_id, mouse.column, mouse.row);
+                    if self
+                        .hits
+                        .panes
+                        .iter()
+                        .any(|hit| hit.pane_id == pane_id && super::contains(hit.inner_rect, point))
+                    {
+                        if self.local_file_methods_available() {
+                            self.begin_file_context_menu(mouse.column, mouse.row, outcome);
+                        }
+                        if self.target_menu().is_none() {
+                            self.open_pane_context_menu(pane_id, mouse.column, mouse.row);
+                        }
+                    } else {
+                        self.open_pane_context_menu(pane_id, mouse.column, mouse.row);
+                    }
                     outcome.repaint = true;
                 }
             }

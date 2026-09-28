@@ -20,7 +20,9 @@ pub(crate) use registry::{
     installed_integration_statuses, integration_recommendations, integration_target_label,
     print_outdated_update_notice,
 };
-pub(crate) use types::{IntegrationRecommendation, IntegrationStatus, IntegrationStatusKind};
+pub(crate) use types::{
+    IntegrationRecommendation, IntegrationStatus, IntegrationStatusKind, IntegrationTarget,
+};
 
 const PI_EXTENSION_INSTALL_NAME: &str = "herdr-agent-state.ts";
 const PI_EXTENSION_ASSET: &str = include_str!("assets/pi/herdr-agent-state.ts");
@@ -207,6 +209,18 @@ const QWEN_HOOK_ASSET: &str = if cfg!(windows) {
 };
 const QWEN_INTEGRATION_VERSION: u32 = 1;
 const QWEN_HOOK_EVENTS: [(&str, &str); 1] = [("SessionStart", "session")];
+const LETTA_HOOK_INSTALL_NAME: &str = if cfg!(windows) {
+    "herdr-agent-session.ps1"
+} else {
+    "herdr-agent-session.sh"
+};
+const LETTA_HOOK_ASSET: &str = if cfg!(windows) {
+    include_str!("assets/letta/herdr-agent-session.ps1")
+} else {
+    include_str!("assets/letta/herdr-agent-session.sh")
+};
+const LETTA_INTEGRATION_VERSION: u32 = 1;
+const LETTA_HOOK_TIMEOUT_MS: u64 = 10_000;
 const QODERCLI_REMOVED_LIFECYCLE_HOOK_EVENTS: [(&str, &str); 12] = [
     ("SessionStart", "idle"),
     ("UserPromptSubmit", "working"),

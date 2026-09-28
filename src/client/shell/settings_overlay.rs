@@ -45,7 +45,11 @@ pub(super) fn render_settings_overlay(
     let height = if settings.section == ClientSettingsSection::Integrations {
         integration_height.max(22)
     } else {
-        22
+        if settings.section == ClientSettingsSection::FileUrlActions {
+            30
+        } else {
+            24
+        }
     };
     let popup = popup(buffer.area, 76, height)?;
     let inner = panel(buffer, popup, palette.accent, palette.panel_bg)?;
@@ -71,6 +75,7 @@ pub(super) fn render_settings_overlay(
             .iter()
             .any(|integration| integration.state == crate::api::schema::IntegrationState::Outdated);
     let mut tab_x = inner.x;
+    let mut tab_y = inner.y + 1;
     let mut tab_hits = Vec::new();
     for section in ClientSettingsSection::ALL {
         let badge = *section == ClientSettingsSection::Integrations && integration_badge;
@@ -79,8 +84,12 @@ pub(super) fn render_settings_overlay(
         } else {
             format!(" {} ", section.label())
         };
-        let width = display_width(&label).min(inner.right().saturating_sub(tab_x));
-        let rect = Rect::new(tab_x, inner.y + 1, width, 1);
+        let width = display_width(&label).min(inner.width);
+        if tab_x > inner.x && tab_x.saturating_add(width) > inner.right() {
+            tab_x = inner.x;
+            tab_y += 1;
+        }
+        let rect = Rect::new(tab_x, tab_y, width, 1);
         let active = *section == settings.section;
         let style = if active {
             Style::default()
@@ -107,14 +116,11 @@ pub(super) fn render_settings_overlay(
         }
         tab_hits.push((rect, *section));
         tab_x = tab_x.saturating_add(width.saturating_add(1));
-        if tab_x >= inner.right() {
-            break;
-        }
     }
     put_text(
         buffer,
         inner.x,
-        inner.y + 2,
+        tab_y + 1,
         inner.width,
         &"─".repeat(inner.width as usize),
         Style::default().fg(palette.surface0).bg(palette.panel_bg),
@@ -122,9 +128,9 @@ pub(super) fn render_settings_overlay(
 
     let content = Rect::new(
         inner.x,
-        inner.y + 4,
+        tab_y + 2,
         inner.width,
-        inner.height.saturating_sub(7),
+        inner.bottom().saturating_sub(tab_y + 5),
     );
     let mut choice_hits = Vec::new();
     match settings.section {
@@ -197,6 +203,9 @@ pub(super) fn render_settings_overlay(
         ClientSettingsSection::Integrations => {
             render_integrations(buffer, content, settings, palette);
         }
+        ClientSettingsSection::FileUrlActions => {
+            render_action_editor(buffer, content, settings, palette, &mut choice_hits);
+        }
     }
 
     let installable = settings
@@ -213,6 +222,16 @@ pub(super) fn render_settings_overlay(
             primary,
             if settings.section == ClientSettingsSection::Integrations {
                 " ↵ install "
+            } else if settings.section == ClientSettingsSection::FileUrlActions {
+                if settings
+                    .action_draft
+                    .as_ref()
+                    .is_some_and(|draft| draft.saving)
+                {
+                    " saving… "
+                } else {
+                    " ^S save "
+                }
             } else {
                 " ↵ apply "
             },
@@ -228,7 +247,11 @@ pub(super) fn render_settings_overlay(
     button(
         buffer,
         close,
-        " esc close ",
+        if settings.section == ClientSettingsSection::FileUrlActions {
+            " esc cancel "
+        } else {
+            " esc close "
+        },
         Style::default()
             .fg(palette.text)
             .bg(palette.surface0)
@@ -239,7 +262,11 @@ pub(super) fn render_settings_overlay(
         inner.x,
         inner.bottom().saturating_sub(2),
         inner.width,
-        " ↑↓ select  tab section",
+        if settings.section == ClientSettingsSection::FileUrlActions {
+            " ↑↓/wheel rows  Enter edit  Tab section  ^S save"
+        } else {
+            " ↑↓ select  tab section"
+        },
         Style::default().fg(palette.overlay1).bg(palette.panel_bg),
     );
 
@@ -251,6 +278,80 @@ pub(super) fn render_settings_overlay(
         settings_choices: choice_hits,
         ..OverlayRender::default()
     })
+}
+
+fn render_action_editor(
+    buffer: &mut Buffer,
+    area: Rect,
+    settings: &ClientSettingsOverlay,
+    palette: &Palette,
+    hits: &mut Vec<(Rect, usize)>,
+) {
+    let style = Style::default().fg(palette.overlay1).bg(palette.panel_bg);
+    let Some(draft) = settings.action_draft.as_ref() else {
+        put_text(
+            buffer,
+            area.x,
+            area.y,
+            area.width,
+            "Local settings unavailable / loading…",
+            style,
+        );
+        return;
+    };
+    let help = [
+        "Trusted programs run with your permissions; argv is not a sandbox.",
+        "Scripts must treat arguments as data, never evaluate them.",
+        "Placeholders: {target} {path} {url} {line} {column}",
+    ];
+    let header = (help.len() as u16).min(area.height.saturating_sub(2));
+    for (offset, text) in help.iter().take(header as usize).enumerate() {
+        put_text(
+            buffer,
+            area.x,
+            area.y + offset as u16,
+            area.width,
+            text,
+            style,
+        );
+    }
+    let error_rows = u16::from(draft.error.is_some());
+    let visible = usize::from(area.height.saturating_sub(header + error_rows));
+    let rows = draft.rows();
+    let start = settings.selected.saturating_sub(visible.saturating_sub(1));
+    for (offset, (index, (_, label))) in rows
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible)
+        .enumerate()
+    {
+        let rect = Rect::new(area.x, area.y + header + offset as u16, area.width, 1);
+        let label = if draft.editing && index == settings.selected {
+            format!("{label} ▏ (Enter done)")
+        } else {
+            label.clone()
+        };
+        draw_choice(
+            buffer,
+            rect,
+            &label,
+            index == settings.selected,
+            false,
+            palette,
+        );
+        hits.push((rect, index));
+    }
+    if let Some(error) = &draft.error {
+        put_text(
+            buffer,
+            area.x,
+            area.bottom().saturating_sub(1),
+            area.width,
+            error,
+            Style::default().fg(palette.accent).bg(palette.panel_bg),
+        );
+    }
 }
 
 fn render_choice_section(

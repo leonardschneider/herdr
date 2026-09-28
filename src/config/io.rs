@@ -7,6 +7,7 @@ use super::{model::LoadedConfig, Config, CONFIG_PATH_ENV_VAR};
 const KNOWN_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "advanced",
     "experimental",
+    "file_url_actions",
     "keys",
     "onboarding",
     "remote",
@@ -376,6 +377,18 @@ fn load_live_config_from_str(content: &str) -> Result<LoadedConfig, Vec<String>>
         |section| config.remote = section,
     );
 
+    load_live_section(
+        table,
+        "file_url_actions",
+        "file/URL action config",
+        &mut diagnostics,
+        &mut invalid_sections,
+        |section| config.file_url_actions = section,
+    );
+    if let Err(error) = config.file_url_actions.validate() {
+        diagnostics.push(format!("invalid file/URL actions: {error}"));
+        invalid_sections.push("file_url_actions".into());
+    }
     diagnostics.extend(config.theme.diagnostics());
 
     Ok(LoadedConfig {

@@ -23,6 +23,20 @@ pub struct IntegrationInstallParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct IntegrationInfoV2 {
+    pub target: String,
+    pub label: String,
+    pub command: String,
+    pub available: bool,
+    pub state: IntegrationState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct IntegrationInstallParamsV2 {
+    pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct IntegrationUninstallParams {
     pub target: IntegrationTarget,
 }
@@ -79,4 +93,100 @@ pub struct IntegrationInstallResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct IntegrationUninstallResult {
     pub messages: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_integration_responses_and_target_enum_stay_closed() {
+        // Requests alone cannot protect the list response against appended variants.
+        let names = [
+            "pi",
+            "omp",
+            "claude",
+            "codex",
+            "copilot",
+            "devin",
+            "droid",
+            "kimi",
+            "opencode",
+            "kilo",
+            "hermes",
+            "qodercli",
+            "qwen",
+            "cursor",
+            "mastracode",
+            "antigravity_cli",
+            "grok",
+        ];
+        let schema =
+            serde_json::to_value(schemars::schema_for!(IntegrationTarget)).expect("schema");
+        assert_eq!(schema["enum"], serde_json::json!(names));
+        for (target, name) in IntegrationTarget::ALL.into_iter().zip(names) {
+            assert_eq!(serde_json::to_value(target).expect("target"), name);
+            assert_eq!(
+                serde_json::from_value::<IntegrationTarget>(serde_json::json!(name))
+                    .expect("target"),
+                target
+            );
+            let runtime = crate::integration::IntegrationTarget::from(target);
+            assert_eq!(runtime.as_str(), name);
+            assert_eq!(runtime.legacy(), Some(target));
+            assert_eq!(
+                name.parse::<crate::integration::IntegrationTarget>()
+                    .expect("runtime target"),
+                runtime
+            );
+            let list = crate::api::schema::ResponseResult::IntegrationList {
+                integrations: vec![IntegrationInfo {
+                    target,
+                    label: name.into(),
+                    command: name.into(),
+                    available: true,
+                    state: IntegrationState::Current,
+                }],
+            };
+            assert_eq!(
+                serde_json::to_value(list).expect("list"),
+                serde_json::json!({
+                    "type": "integration_list", "integrations": [{"target": name, "label": name, "command": name,
+                        "available": true, "state": "current"}]
+                })
+            );
+            for (result, kind) in [
+                (
+                    crate::api::schema::ResponseResult::IntegrationInstall {
+                        target,
+                        details: IntegrationInstallResult {
+                            messages: vec!["ok".into()],
+                        },
+                    },
+                    "integration_install",
+                ),
+                (
+                    crate::api::schema::ResponseResult::IntegrationUninstall {
+                        target,
+                        details: IntegrationUninstallResult {
+                            messages: vec!["ok".into()],
+                        },
+                    },
+                    "integration_uninstall",
+                ),
+            ] {
+                assert_eq!(
+                    serde_json::to_value(result).expect("result"),
+                    serde_json::json!({"type": kind, "target": name, "details": {"messages": ["ok"]}})
+                );
+            }
+        }
+        assert!(serde_json::from_value::<IntegrationTarget>(serde_json::json!("letta")).is_err());
+        assert_eq!(
+            "letta"
+                .parse::<crate::integration::IntegrationTarget>()
+                .expect("letta"),
+            crate::integration::IntegrationTarget::Letta
+        );
+    }
 }

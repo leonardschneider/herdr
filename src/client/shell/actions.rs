@@ -622,6 +622,21 @@ impl ClientShellState {
             } => {
                 return self.complete_word_selection_row(pane_id, absolute_row, generation, result);
             }
+            PendingEndpointKind::PaneFileResolve { context } => {
+                return self.complete_file_context_menu(context, result);
+            }
+            PendingEndpointKind::ActionSettingsGet { epoch } => {
+                return self.complete_action_settings_get(epoch, result)
+            }
+            PendingEndpointKind::ActionSettingsReload { epoch } => {
+                return self.complete_action_settings_reload(epoch, result)
+            }
+            PendingEndpointKind::ActionSettingsSet { revision } => {
+                return self.complete_action_settings_set(revision, result)
+            }
+            PendingEndpointKind::TargetAction { file, action } => {
+                return self.complete_target_action(*file, action, result)
+            }
             PendingEndpointKind::PaneLinkActivate {
                 pane_id,
                 inner_rect,

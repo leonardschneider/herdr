@@ -43,6 +43,8 @@ use super::{
 const DEFAULT_DETECTION_ROWS: usize = 24;
 const KITTY_GRAPHICS_REDRAW_SETTLE: Duration = Duration::from_millis(20);
 const CURSOR_POSITION_SETTLE_ENABLED: bool = cfg!(windows);
+#[cfg(unix)]
+const MODE_CURSOR_VISIBLE: u16 = 25;
 const MODE_MOUSE_X10: u16 = 9;
 const MODE_MOUSE_PRESS_RELEASE: u16 = 1000;
 const MODE_MOUSE_BUTTON_MOTION: u16 = 1002;
@@ -1569,6 +1571,26 @@ impl GhosttyPaneTerminal {
         windows_recent_fallback::update(&mut core);
         if let Ok(mut key_encoder) = self.key_encoder.lock() {
             key_encoder.set_from_terminal(&core.terminal);
+        }
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn handoff_cursor_visible(&self) -> Option<bool> {
+        self.core
+            .lock()
+            .ok()?
+            .terminal
+            .mode_get(MODE_CURSOR_VISIBLE)
+            .ok()
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn seed_handoff_cursor_visible(&self, visible: Option<bool>) {
+        let Some(visible) = visible else {
+            return;
+        };
+        if let Ok(mut core) = self.core.lock() {
+            let _ = core.terminal.mode_set(MODE_CURSOR_VISIBLE, visible);
         }
     }
 

@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 mod agent_view;
 mod agents;
 mod env;
+mod files;
 mod integrations;
 mod layouts;
 mod pane_graphics;
@@ -11,6 +12,7 @@ pub(crate) mod plugins;
 pub(super) mod responses;
 mod session;
 mod tabs;
+pub(super) mod target_actions;
 mod workspaces;
 mod worktrees;
 
@@ -892,6 +894,13 @@ impl App {
         };
 
         let response = match request.method {
+            Method::FileUrlActionsGet(_)
+            | Method::FileUrlActionsSet(_)
+            | Method::PaneTargetResolve(_)
+            | Method::PaneTargetExecute(_)
+            | Method::PaneTargetAuthorize(_) => {
+                return self.handle_scoped_action_request(request, None);
+            }
             Method::ServerStop(_) => {
                 self.state.should_quit = true;
                 SuccessResponse {
@@ -1118,6 +1127,10 @@ impl App {
             Method::PaneGet(target) => return self.handle_pane_get(request.id, target),
             Method::PaneFocus(target) => return self.handle_pane_focus(request.id, target),
             Method::PaneInputSet(params) => return self.handle_pane_input_set(request.id, params),
+            Method::PaneFileResolve(params) => {
+                return self.handle_pane_file_resolve(request.id, params)
+            }
+            Method::PaneFileEdit(params) => return self.handle_pane_file_edit(request.id, params),
             Method::PaneLinkActivate(params) => {
                 return self.handle_pane_link_activate(request.id, params);
             }
@@ -1184,6 +1197,12 @@ impl App {
             }
             Method::IntegrationInstall(params) => {
                 return self.handle_integration_install(request.id, params);
+            }
+            Method::IntegrationListV2(_) => {
+                return self.handle_integration_list_v2(request.id);
+            }
+            Method::IntegrationInstallV2(params) => {
+                return self.handle_integration_install_v2(request.id, params);
             }
             Method::IntegrationUninstall(params) => {
                 return self.handle_integration_uninstall(request.id, params);

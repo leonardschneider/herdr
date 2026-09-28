@@ -591,7 +591,7 @@ mod tests {
         );
         app.state.integration_recommendations =
             vec![crate::integration::IntegrationRecommendation {
-                target: crate::api::schema::IntegrationTarget::Claude,
+                target: crate::integration::IntegrationTarget::Claude,
                 label: "claude",
                 command: "claude",
                 available: true,

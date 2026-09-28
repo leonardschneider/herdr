@@ -138,6 +138,7 @@ impl ClientShellState {
             self.reveal_mobile_workspace = true;
         }
         self.last_composed_size = Some((cols, rows));
+        self.invalidate_stale_file_menu();
         let valid_navigation_target = self.mode == ClientShellMode::Navigate
             && self
                 .navigate_workspace_id
@@ -243,6 +244,8 @@ impl ClientShellState {
                 pixel_height: pane.pixel_height,
             })
             .collect();
+        self.hits.file_surface_revision =
+            Some((surface.projection_revision, surface.surface_revision));
         let topology_signature = pane_surface_topology_signature(surface);
         self.hits.pane_splits = surface
             .splits
@@ -322,9 +325,39 @@ impl ClientShellState {
             .copy_mode
             .as_ref()
             .is_some_and(|copy_mode| !copy_mode.search_matches.is_empty());
-        if has_selection || has_search {
+        let file_highlight = self
+            .target_menu()
+            .filter(|file| file.highlight.is_some() && self.file_highlight_is_current(file));
+        if has_selection || has_search || file_highlight.is_some() {
             let cursor = frame.cursor.clone();
             let mut composed = frame.to_ratatui_buffer()?;
+            // Pure paint adapters only; never install these ranges in copy/selection state.
+            if let Some(file) = file_highlight {
+                for span in file.highlight.iter().flatten() {
+                    let selection = crate::selection::Selection::absolute_range(
+                        file.context.pane_id.clone(),
+                        (0, 0),
+                        (0, span.end_col - span.start_col - 1),
+                    );
+                    crate::ui::render_selection_highlight(
+                        Some(&selection),
+                        &mut composed,
+                        &file.context.pane_id,
+                        Rect::new(
+                            file.context.inner_rect.x + span.start_col,
+                            file.context.inner_rect.y + span.row,
+                            span.end_col - span.start_col,
+                            1,
+                        ),
+                        None,
+                        &self.config.palette,
+                        crate::terminal_theme::TerminalTheme {
+                            background: self.host_background,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
             for hit in &self.hits.panes {
                 let copy_surface_coherent =
                     client_copy_surface_coherent(self.copy_mode.as_ref(), hit);

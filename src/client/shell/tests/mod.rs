@@ -208,11 +208,14 @@ fn surface_with_popup() -> PaneSurfaceFrame {
     surface
 }
 
+mod action_editor;
+mod action_poll_repaint;
 mod agents_worktrees_notifications;
 mod chrome_context;
 mod copy;
 mod endpoint_requests;
 mod endpoints;
+mod file_context;
 #[path = "input.rs"]
 mod input_domain;
 mod keybindings_settings;

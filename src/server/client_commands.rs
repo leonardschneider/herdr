@@ -15,13 +15,19 @@ const ENDPOINT_RESPONSE_CHUNK_BYTES: usize = 512 * 1024;
 const CLIENT_SHELL_METHODS: &[&str] = &[
     "client_shell.surface.set",
     "command.invoke",
+    "file_url_actions.get",
+    "file_url_actions.set",
     "integration.install",
+    "integration.install.v2",
     "integration.list",
+    "integration.list.v2",
     "layout.set_split_ratio",
     "pane.close",
     "pane.copy_motion",
     "pane.copy_search",
     "pane.edit_scrollback",
+    "pane.file.edit",
+    "pane.file.resolve",
     "pane.focus",
     "pane.focus_direction",
     "pane.input.set",
@@ -32,6 +38,9 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "pane.selection.read",
     "pane.split",
     "pane.swap",
+    "pane.target.authorize",
+    "pane.target.execute",
+    "pane.target.resolve",
     "pane.zoom",
     "product_announcement.dismiss",
     "release_notes.dismiss",
@@ -280,18 +289,118 @@ mod tests {
 
     #[test]
     fn advertised_client_shell_method_shapes_stay_at_the_v1_contract() {
-        let expected: BTreeMap<String, String> = serde_json::from_str(include_str!(concat!(
+        let mut expected: BTreeMap<String, String> = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/endpoint-method-shapes-v1.json"
         )))
         .expect("endpoint method shape fixture");
-        let actual = endpoint_method_shape_digests();
+        let extensions: BTreeMap<String, String> = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/endpoint-method-shapes-integration-v2.json"
+        )))
+        .expect("integration v2 extension fixture");
+        assert_eq!(
+            extensions.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["integration.install.v2", "integration.list.v2"]
+        );
+        for (method, digest) in extensions {
+            assert!(
+                expected.insert(method, digest).is_none(),
+                "extension must not replace v1"
+            );
+        }
+        let mut actual = endpoint_method_shape_digests();
+        // Additive file-method contracts are characterized independently; never
+        // regenerate or replace an entry in the frozen generation-1 fixture.
+        for method in [
+            "pane.file.edit",
+            "pane.file.resolve",
+            "file_url_actions.get",
+            "file_url_actions.set",
+            "pane.target.resolve",
+            "pane.target.execute",
+            "pane.target.authorize",
+        ] {
+            assert!(actual.remove(method).is_some());
+        }
 
         assert_eq!(
             actual,
             expected,
             "an existing endpoint method changed shape; add load-bearing behavior as a new advertised method or explicitly gate new fields"
         );
+    }
+
+    #[test]
+    fn file_method_extension_contract() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/endpoint-file-methods-v1.json"
+        )))
+        .unwrap();
+        for (method, contract) in fixture.as_object().unwrap() {
+            let request =
+                serde_json::json!({"id":"file-test", "method":method, "params":contract["params"]});
+            let parsed: crate::api::schema::Request =
+                serde_json::from_value(request.clone()).unwrap();
+            assert!(supports_client_shell_method(&parsed.method));
+            assert_eq!(serde_json::to_value(parsed).unwrap(), request);
+            let fields: Vec<_> = contract["params"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect();
+            let required: Vec<String> =
+                serde_json::from_value(contract["required"].clone()).unwrap();
+            assert_eq!(fields, required);
+            for field in fields {
+                let mut missing = request.clone();
+                missing["params"].as_object_mut().unwrap().remove(&field);
+                assert!(serde_json::from_value::<crate::api::schema::Request>(missing).is_err());
+            }
+        }
+        assert_eq!(
+            serde_json::from_str::<crate::api::schema::PaneFileKind>("\"future_kind\"").unwrap(),
+            crate::api::schema::PaneFileKind::Unknown
+        );
+    }
+
+    #[test]
+    fn target_action_extension_contract_is_separately_advertised() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/endpoint-target-actions-v1.json"
+        )))
+        .unwrap();
+        assert_eq!(fixture.as_object().unwrap().len(), 5);
+        for (method, contract) in fixture.as_object().unwrap() {
+            let request = serde_json::json!({"id":"target-test", "method":method, "params":contract["params"]});
+            let parsed: crate::api::schema::Request =
+                serde_json::from_value(request.clone()).unwrap();
+            assert!(supports_client_shell_method(&parsed.method));
+            assert_eq!(serde_json::to_value(parsed).unwrap(), request);
+            if method != "file_url_actions.get" {
+                for forged in ["client_id", "executable", "argv", "profile"] {
+                    let mut injected = request.clone();
+                    injected["params"]
+                        .as_object_mut()
+                        .unwrap()
+                        .insert(forged.into(), serde_json::json!("untrusted"));
+                    assert!(
+                        serde_json::from_value::<crate::api::schema::Request>(injected).is_err()
+                    );
+                }
+            }
+            for field in contract["required"].as_array().unwrap() {
+                let mut missing = request.clone();
+                missing["params"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(field.as_str().unwrap());
+                assert!(serde_json::from_value::<crate::api::schema::Request>(missing).is_err());
+            }
+        }
     }
 
     #[test]

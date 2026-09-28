@@ -1275,6 +1275,10 @@ fn agent_methods_round_trip_over_socket() {
             workspace_id
         ),
     );
+    assert!(
+        tab_created["result"].is_object(),
+        "tab.create failed: {tab_created}"
+    );
     let second_tab_id = tab_created["result"]["tab"]["tab_id"].as_str().unwrap();
     let second_pane_id = tab_created["result"]["root_pane"]["pane_id"]
         .as_str()

@@ -9,6 +9,18 @@ You already know this model. Jump to the [keybinding reference](/docs/configurat
 
 Herdr is mouse-native. You can click panes, tabs, workspaces, and agents, drag split borders, and use right-click menus without learning a single keybinding. Keyboard control is optional.
 
+## File and URL actions
+
+On a supported local macOS endpoint, right-click **any character inside a file path or HTTP(S) URL**. No selection is needed: Herdr resolves the whole target under the pointer. The menu shows short **Editor** and **System opener** action labels, without repeating the path or URL. The recognized source text is temporarily highlighted without changing your selection or clipboard. This highlight disappears when the menu closes or the source content, scroll position, or geometry changes; the captured action target does not change. Unrecognized text and unavailable file actions do not show file/URL commands; the ordinary **Rename**, **Split**, **Zoom**, and **Close** pane menu remains available on terminal text and blank space. A pending lookup does not briefly show the wrong menu, and a dismissed lookup never reopens one. Tab, workspace, and border menus are unchanged.
+
+Configure both actions in the file/URL section of settings (`prefix+s`): executable, individual arguments, launch mode, and applicable target kinds. Save applies the complete draft; Cancel leaves it unchanged. Defaults are Neovim in a new pane for sampled text files and macOS `open` for regular files and web URLs. File `:line:column` hints are honored; the actual file is never deleted when the editor exits. URL editing must be enabled deliberately and depends on the editor's URL support; Herdr does not download URL contents.
+
+Absolute paths, `~/…`, current-pane-relative paths, quoted paths containing spaces, local `file://` links, and explicit terminal hyperlinks are supported. Relative paths use the pane's current directory, which may differ from the directory when historical output was printed. A ready menu retains its target during subsequent output. Changing the action settings invalidates open menus rather than silently changing their command.
+
+This version does not open directories, map remote paths, or enable actions on remote Herdr endpoints. Local panes running recognizable SSH/container programs do not resolve file paths, but supported web URLs can open locally. Files are inspected only on an explicit request; URL recognition does not contact the destination. Normal selection, Ctrl-click links, and application-owned right-click behavior remain unchanged.
+
+Arguments support `{target}`, `{path}`, `{url}`, `{line}`, and `{column}`; file positions default to 1. Substitutions are literal argv data, not an implicit shell command. Commands/scripts are trusted configuration running with your permissions: arbitrary programs can still interpret arguments as code. Do not evaluate a target in a shell/interpreter; pass it as positional data. See [configuration](/docs/configuration/#file-and-url-actions) for examples.
+
 ## What the prefix is
 
 A terminal multiplexer sits between your terminal and the programs running inside it. Those programs already use most key combinations: `ctrl+c` interrupts, `ctrl+r` searches history, editors claim nearly everything else. If Herdr grabbed common keys directly, it would break the programs inside it.

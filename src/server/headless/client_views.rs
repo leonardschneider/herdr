@@ -232,6 +232,8 @@ impl HeadlessServer {
             Method::CommandInvoke(_)
                 | Method::PaneClose(_)
                 | Method::PaneEditScrollback(_)
+                | Method::PaneFileEdit(_)
+                | Method::PaneTargetExecute(_)
                 | Method::PaneSplit(_)
                 | Method::TabClose(_)
                 | Method::TabCreate(_)
@@ -255,10 +257,13 @@ impl HeadlessServer {
                 | Method::PaneCopyMotion(_)
                 | Method::PaneCopySearch(_)
                 | Method::PaneEditScrollback(_)
+                | Method::PaneFileEdit(_)
+                | Method::PaneTargetExecute(_)
                 | Method::PaneFocus(_)
                 | Method::PaneFocusDirection(_)
                 | Method::PaneInputSet(_)
                 | Method::PaneLinkActivate(_)
+                | Method::PaneFileResolve(_)
                 | Method::PaneRename(_)
                 | Method::PaneResize(_)
                 | Method::PaneScroll(_)
@@ -292,6 +297,8 @@ impl HeadlessServer {
                 | Method::LayoutSetSplitRatio(_)
                 | Method::PaneClose(_)
                 | Method::PaneEditScrollback(_)
+                | Method::PaneFileEdit(_)
+                | Method::PaneTargetExecute(_)
                 | Method::PaneFocus(_)
                 | Method::PaneFocusDirection(_)
                 | Method::PaneResize(_)
@@ -897,6 +904,23 @@ impl HeadlessServer {
         client_id: u64,
         msg: api::ApiRequestMessage,
     ) -> bool {
+        if matches!(
+            &msg.request.method,
+            api::schema::Method::FileUrlActionsGet(_) | api::schema::Method::FileUrlActionsSet(_)
+        ) {
+            let response = self.app.handle_scoped_action_request(
+                msg.request,
+                Some(api::ActionRequestContext { client_id }),
+            );
+            let _ = msg.respond_to.send(response);
+            return false;
+        }
+        let scoped_target_request = matches!(
+            &msg.request.method,
+            api::schema::Method::PaneTargetResolve(_)
+                | api::schema::Method::PaneTargetExecute(_)
+                | api::schema::Method::PaneTargetAuthorize(_)
+        );
         let focus_before = self.shell_focus_target(client_id);
         let focused_tabs_before = self.focused_shell_tabs();
         let method_claims_geometry = Self::shell_endpoint_claims_geometry(&msg.request.method);
@@ -907,7 +931,18 @@ impl HeadlessServer {
         self.set_default_shell_target_from_client(client_id);
         let popup_before = self.app.state.popup_pane.is_some();
         let popup_owner = self.shell_tab_id_for_client(client_id);
-        let changed = self.handle_api_request_with_shutdown_check_inner(msg, false);
+        let changed = if scoped_target_request {
+            let changes_ui = api::request_changes_ui(&msg.request);
+            let internal_changed = self.drain_all_internal_events_with_forwarding();
+            let response = self.app.handle_scoped_action_request(
+                msg.request,
+                Some(api::ActionRequestContext { client_id }),
+            );
+            let _ = msg.respond_to.send(response);
+            changes_ui | internal_changed
+        } else {
+            self.handle_api_request_with_shutdown_check_inner(msg, false)
+        };
         self.focus_shell_client_on_default_target(client_id);
         if !popup_before && self.app.state.popup_pane.is_some() {
             self.popup_owner_tab_id = popup_owner;

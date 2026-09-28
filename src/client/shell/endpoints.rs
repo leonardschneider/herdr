@@ -288,6 +288,15 @@ impl ClientShellState {
         self.set_endpoint_methods_for(&endpoint_id, methods);
     }
 
+    // Optional versioned APIs require explicit opt-in, unlike the legacy baseline.
+    pub(super) fn advertises_endpoint_method(&self, method: &str) -> bool {
+        self.endpoints
+            .iter()
+            .find(|endpoint| endpoint.endpoint_id == self.active_endpoint_id)
+            .and_then(|endpoint| endpoint.methods.as_ref())
+            .is_some_and(|methods| methods.contains(method))
+    }
+
     pub(super) fn supports_endpoint_method(&self, method: &crate::api::schema::Method) -> bool {
         self.endpoints
             .iter()

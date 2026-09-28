@@ -1891,6 +1891,7 @@ impl PaneRuntime {
             },
             keyboard_protocol_ansi: self.terminal.kitty_keyboard_state_ansi(),
             input_state: self.input_state(),
+            cursor_visible: self.terminal.ghostty.handoff_cursor_visible(),
             terminal_title: self.terminal_title(),
             initial_history_ansi: None,
         }
@@ -2101,6 +2102,7 @@ impl PaneRuntime {
             keyboard_protocol_flags,
             keyboard_protocol_ansi,
             input_state,
+            cursor_visible,
             terminal_title,
             initial_history_ansi,
         } = state;
@@ -2135,6 +2137,9 @@ impl PaneRuntime {
         if let Some(ansi) = initial_history_ansi.as_deref() {
             pane_terminal.seed_history_ansi(ansi);
         }
+        // Restore after screen/mode seeding: incremental TUIs may hide the
+        // cursor only once, then keep redrawing without repeating DECTCEM.
+        pane_terminal.seed_handoff_cursor_visible(cursor_visible);
         let terminal = Arc::new(PaneTerminal::new(pane_terminal));
         let compression = TerminalCompressionTask::spawn(pane_id, terminal.clone());
         let child_pid = Arc::new(AtomicU32::new(child_pid));
@@ -4053,6 +4058,80 @@ mod tests {
                 modify_other_keys: true,
                 color_scheme_reporting: true,
             })
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn handoff_cursor_visibility_survives_incremental_animation() {
+        for alternate in [false, true] {
+            for visible in [false, true] {
+                let source = PaneRuntime::test_with_screen_bytes(40, 8, b"");
+                if alternate {
+                    source.test_process_pty_bytes(b"\x1b[?1049h");
+                }
+                source.test_process_pty_bytes(if visible { b"\x1b[?25h" } else { b"\x1b[?25l" });
+                source.test_process_pty_bytes(b"waiting .\r\n");
+                let exported: crate::handoff_runtime::HandoffRuntimeState = serde_json::from_slice(
+                    &serde_json::to_vec(&source.handoff_runtime_state(12)).unwrap(),
+                )
+                .unwrap();
+                let imported = PaneRuntime::test_with_screen_bytes(40, 8, b"");
+                if let Some(input) = exported.input_state {
+                    imported.terminal.ghostty.seed_handoff_input_state(input);
+                }
+                assert_eq!(exported.cursor_visible, Some(visible));
+                imported
+                    .terminal
+                    .ghostty
+                    .seed_handoff_cursor_visible(exported.cursor_visible);
+                // Like Ink, subsequent animation updates move and erase, but do
+                // not repeat the cursor visibility command sent at mount time.
+                for animation in [
+                    b"\x1b[1A\rwaiting -\x1b[K\r\n",
+                    b"\x1b[1A\rwaiting |\x1b[K\r\n",
+                    b"\x1b[1A\rwaiting /\x1b[K\r\n",
+                ] {
+                    source.test_process_pty_bytes(animation);
+                    imported.test_process_pty_bytes(animation);
+                    assert_eq!(source.terminal.cursor_state().unwrap().visible, visible);
+                    assert_eq!(
+                        imported.terminal.cursor_state().unwrap().visible,
+                        visible,
+                        "handoff changed visibility (alternate={alternate})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn handoff_cursor_visibility_omitted_keeps_default() {
+        let source = PaneRuntime::test_with_screen_bytes(40, 8, b"\x1b[?25l");
+        let mut json = serde_json::to_value(source.handoff_runtime_state(12)).unwrap();
+        json.as_object_mut().unwrap().remove("cursor_visible");
+        let legacy: crate::handoff_runtime::HandoffRuntimeState =
+            serde_json::from_value(json).unwrap();
+        assert_eq!(legacy.cursor_visible, None);
+        assert!(serde_json::to_value(&legacy)
+            .unwrap()
+            .get("cursor_visible")
+            .is_none());
+        let imported = PaneRuntime::test_with_screen_bytes(40, 8, b"");
+        if let Some(input) = legacy.input_state {
+            imported.terminal.ghostty.seed_handoff_input_state(input);
+        }
+        let before = imported.terminal.ghostty.handoff_cursor_visible();
+        imported
+            .terminal
+            .ghostty
+            .seed_handoff_cursor_visible(legacy.cursor_visible);
+        assert_eq!(imported.terminal.ghostty.handoff_cursor_visible(), before);
+        assert_eq!(
+            before,
+            Some(true),
+            "unknown metadata cannot recover a lost hide"
         );
     }
 

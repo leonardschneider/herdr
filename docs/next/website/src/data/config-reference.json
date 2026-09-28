@@ -13,6 +13,98 @@
       ]
     },
     {
+      "id": "file_url_actions",
+      "title": "File and URL actions",
+      "keys": [
+        {
+          "key": "file_url_actions.editor.enabled",
+          "type": "boolean",
+          "default": "true",
+          "description": "Offer the configured editor for eligible clicked targets."
+        },
+        {
+          "key": "file_url_actions.editor.executable",
+          "type": "string",
+          "default": "\"nvim\"",
+          "description": "Fixed editor program name or path; not a shell command or placeholder."
+        },
+        {
+          "key": "file_url_actions.editor.arguments",
+          "type": "array",
+          "default": "[\"-c\", \"call cursor({line},{column})\", \"--\", \"{path}\"]",
+          "description": "Separate argv templates. Supports target/path/url/line/column placeholders and doubled literal braces."
+        },
+        {
+          "key": "file_url_actions.editor.launch_mode",
+          "type": "string",
+          "default": "\"pane\"",
+          "values": ["pane", "external"],
+          "description": "Launch in a new terminal pane or as an external process."
+        },
+        {
+          "key": "file_url_actions.editor.applies_to.text_files",
+          "type": "boolean",
+          "default": "true",
+          "description": "Enable editor actions for sampled UTF-8 text files."
+        },
+        {
+          "key": "file_url_actions.editor.applies_to.other_files",
+          "type": "boolean",
+          "default": "false",
+          "description": "Explicitly enable editor actions for binary or unknown-encoding regular files."
+        },
+        {
+          "key": "file_url_actions.editor.applies_to.urls",
+          "type": "boolean",
+          "default": "false",
+          "description": "Explicitly enable URL editing; use compatible arguments and an editor that supports URLs."
+        },
+        {
+          "key": "file_url_actions.system_opener.enabled",
+          "type": "boolean",
+          "default": "true",
+          "description": "Offer the configured system command for eligible clicked targets."
+        },
+        {
+          "key": "file_url_actions.system_opener.executable",
+          "type": "string",
+          "default": "\"open\"",
+          "description": "Fixed opener program name or path, executed without an implicit shell."
+        },
+        {
+          "key": "file_url_actions.system_opener.arguments",
+          "type": "array",
+          "default": "[\"--\", \"{target}\"]",
+          "description": "Separate literal argv templates. Custom programs remain trusted executable policy."
+        },
+        {
+          "key": "file_url_actions.system_opener.launch_mode",
+          "type": "string",
+          "default": "\"external\"",
+          "values": ["pane", "external"],
+          "description": "Launch as an external process or in a new terminal pane."
+        },
+        {
+          "key": "file_url_actions.system_opener.applies_to.text_files",
+          "type": "boolean",
+          "default": "true",
+          "description": "Enable system opening for sampled text files."
+        },
+        {
+          "key": "file_url_actions.system_opener.applies_to.other_files",
+          "type": "boolean",
+          "default": "true",
+          "description": "Enable system opening for binary or unknown-encoding regular files."
+        },
+        {
+          "key": "file_url_actions.system_opener.applies_to.urls",
+          "type": "boolean",
+          "default": "true",
+          "description": "Enable opening syntactically valid HTTP(S) URLs; recognition does not contact the destination."
+        }
+      ]
+    },
+    {
       "id": "server",
       "title": "Server",
       "keys": [
@@ -1380,6 +1472,17 @@
           ]
         },
         {
+          "key": "ui.sound.agents.letta",
+          "type": "enum",
+          "default": "\"default\"",
+          "description": "Sound override for detected Letta Code agents.",
+          "values": [
+            "default",
+            "on",
+            "off"
+          ]
+        },
+        {
           "key": "ui.sound.agents.maki",
           "type": "enum",
           "default": "\"default\"",
@@ -1483,7 +1586,7 @@
           "key": "experimental.cjk_ime_agents",
           "type": "list of strings",
           "default": "[]",
-          "description": "Restrict `reveal_hidden_cursor_for_cjk_ime` to focused panes whose detected agent matches one of these names (case-insensitive). Empty list means apply to any focused pane. Unknown agent names are ignored; if the list contains no valid names, the reveal does not apply. Accepted names: pi, claude, codex, gemini, cursor, devin, cline, opencode, copilot, kimi, kiro, droid, amp, grok, hermes, kilo, qodercli, qoder, qwen, qwen-code, maki."
+          "description": "Restrict `reveal_hidden_cursor_for_cjk_ime` to focused panes whose detected agent matches one of these names (case-insensitive). Empty list means apply to any focused pane. Unknown agent names are ignored; if the list contains no valid names, the reveal does not apply. Accepted names: pi, claude, codex, gemini, cursor, devin, cline, opencode, copilot, kimi, kiro, droid, amp, grok, hermes, kilo, qodercli, qoder, qwen, qwen-code, letta, letta-code, maki."
         },
         {
           "key": "experimental.cjk_ime_cursor_shape",

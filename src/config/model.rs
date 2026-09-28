@@ -308,6 +308,7 @@ pub fn validated_sidebar_bounds(min: u16, max: u16) -> Option<(u16, u16)> {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    pub file_url_actions: crate::file_url_actions::ActionProfiles,
     pub onboarding: Option<bool>,
     pub theme: ThemeConfig,
     pub terminal: TerminalConfig,
@@ -1060,7 +1061,7 @@ pub struct ExperimentalConfig {
     /// if the list contains no valid names, the reveal does not apply.
     /// Accepted names: pi, claude, codex, gemini, cursor, devin, cline,
     /// opencode, copilot, kimi, kiro, droid, amp, grok, hermes, kilo,
-    /// qodercli, qoder, qwen, qwen-code, maki.
+    /// qodercli, qoder, qwen, qwen-code, letta, letta-code, maki.
     /// Default: empty.
     pub cjk_ime_agents: Vec<String>,
     /// Cursor shape rendered for the IME anchor when
