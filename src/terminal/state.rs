@@ -6331,6 +6331,135 @@ mod tests {
     }
 
     #[test]
+    fn letta_session_report_replaces_stored_session_id() {
+        let mut terminal = test_terminal();
+        terminal.set_detected_state(Some(Agent::Letta), AgentState::Idle);
+        terminal
+            .set_agent_session_ref(
+                "herdr:letta".into(),
+                "letta".into(),
+                crate::agent_resume::AgentSessionRef::id("default:agent-123"),
+                Some(20),
+            )
+            .expect("initial Letta identity should be accepted");
+
+        for (next_id, seq, start_source) in
+            [("conv-new", 21, "new"), ("conv-resumed", 22, "resume")]
+        {
+            let mutation = terminal
+                .set_agent_session_ref_for_session_start(
+                    "herdr:letta".into(),
+                    "letta".into(),
+                    crate::agent_resume::AgentSessionRef::id(next_id),
+                    Some(seq),
+                    Some(start_source.into()),
+                )
+                .unwrap_or_else(|| panic!("{start_source} should replace the session"));
+            assert!(mutation.session_ref_changed);
+            assert_eq!(
+                terminal.persisted_agent_session.as_ref(),
+                Some(&crate::agent_resume::PersistedAgentSession {
+                    source: "herdr:letta".into(),
+                    agent: "letta".into(),
+                    session_ref: crate::agent_resume::AgentSessionRef::id(next_id).unwrap(),
+                })
+            );
+            assert!(terminal.hook_authority.is_none());
+        }
+    }
+
+    #[test]
+    fn letta_session_report_replacement_preserves_authority_guards() {
+        for start_source in ["new", "resume"] {
+            for (source, agent, detected_agent, exited, seq) in [
+                (
+                    "unknown:letta",
+                    "letta",
+                    Some(Agent::Letta),
+                    false,
+                    Some(21),
+                ),
+                ("herdr:letta", "qwen", Some(Agent::Letta), false, Some(21)),
+                ("herdr:letta", "letta", Some(Agent::Qwen), false, Some(21)),
+                ("herdr:letta", "letta", None, false, Some(21)),
+                ("herdr:letta", "letta", Some(Agent::Letta), true, Some(21)),
+                ("herdr:letta", "letta", Some(Agent::Letta), false, Some(20)),
+                ("herdr:letta", "letta", Some(Agent::Letta), false, Some(19)),
+                ("herdr:letta", "letta", Some(Agent::Letta), false, None),
+            ] {
+                let mut terminal = test_terminal();
+                terminal.set_detected_state(Some(Agent::Letta), AgentState::Idle);
+                terminal
+                    .set_agent_session_ref(
+                        "herdr:letta".into(),
+                        "letta".into(),
+                        crate::agent_resume::AgentSessionRef::id("conv-old"),
+                        Some(20),
+                    )
+                    .expect("initial Letta identity should be accepted");
+                let previous = terminal.persisted_agent_session.clone();
+                terminal.set_detected_state(detected_agent, AgentState::Idle);
+                if exited {
+                    terminal.recent_agent_process_exit = Some(RecentAgentProcessExit {
+                        agent: Agent::Letta,
+                        observed_at: Instant::now(),
+                    });
+                }
+                let mutation = terminal.set_agent_session_ref_for_session_start(
+                    source.into(),
+                    agent.into(),
+                    crate::agent_resume::AgentSessionRef::id("conv-new"),
+                    seq,
+                    Some(start_source.into()),
+                );
+                assert!(
+                    mutation.is_none(),
+                    "{start_source}: {source}, {agent}, {detected_agent:?}, exited={exited}, seq={seq:?}"
+                );
+                assert_eq!(terminal.persisted_agent_session, previous);
+                assert!(terminal.hook_authority.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn letta_session_report_rejects_unrecognized_replacement_sources() {
+        for start_source in [
+            None,
+            Some("startup"),
+            Some("unknown"),
+            Some("clear"),
+            Some("compact"),
+            Some("branch"),
+            Some("fork"),
+            Some("select"),
+        ] {
+            let mut terminal = test_terminal();
+            terminal.set_detected_state(Some(Agent::Letta), AgentState::Idle);
+            terminal.set_persisted_agent_session(crate::agent_resume::PersistedAgentSession {
+                source: "herdr:letta".into(),
+                agent: "letta".into(),
+                session_ref: crate::agent_resume::AgentSessionRef::id("conv-old").unwrap(),
+            });
+            let previous = terminal.persisted_agent_session.clone();
+            assert!(
+                terminal
+                    .set_agent_session_ref_for_session_start(
+                        "herdr:letta".into(),
+                        "letta".into(),
+                        crate::agent_resume::AgentSessionRef::id("conv-new"),
+                        Some(21),
+                        start_source.map(str::to_string),
+                    )
+                    .is_none(),
+                "{start_source:?} must not authorize replacement"
+            );
+            assert_eq!(terminal.persisted_agent_session, previous);
+            assert!(terminal.hook_authority.is_none());
+        }
+    }
+
+    #[test]
     fn qwen_session_ref_does_not_replace_without_foreground_qwen() {
         let mut terminal = test_terminal();
         terminal

@@ -296,7 +296,6 @@ impl ProcessRecognizer<'_> {
                     | "--json"
                     | "--stream-json"
                     | "--run"
-                    | "--disable-memory-guard"
                     | "--output-format"
                     | "--input-format"
                     | "--include-partial-messages"
@@ -1446,8 +1445,56 @@ versions_directory = "versions"
     }
 
     #[test]
+    fn identify_agent_in_job_detects_letta_with_disabled_memory_guard() {
+        for argv in [
+            vec!["letta", "--disable-memory-guard"],
+            vec![
+                "node",
+                "/home/user/project/node_modules/.bin/letta",
+                "--disable-memory-guard",
+            ],
+            vec![
+                "bun",
+                "/home/user/project/node_modules/@letta-ai/letta-code/letta.js",
+                "--disable-memory-guard",
+            ],
+            vec![
+                "node.exe",
+                r"C:\Users\user\AppData\Roaming\npm\node_modules\@letta-ai\letta-code\letta.js",
+                "--disable-memory-guard",
+            ],
+            vec![
+                "node",
+                "--require",
+                "/tmp/preload.js",
+                "--",
+                "/home/user/project/node_modules/.bin/letta",
+                "--disable-memory-guard",
+            ],
+        ] {
+            // Exercise both the process-group leader and child candidate paths.
+            for pid in [123, 124] {
+                let job = crate::platform::ForegroundJob {
+                    process_group_id: 123,
+                    processes: vec![foreground_process(pid, "MainThread", &argv)],
+                };
+                assert_eq!(
+                    identify_agent_in_job(&job),
+                    Some((Agent::Letta, "letta".to_string())),
+                    "argv: {argv:?}, pid: {pid}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn identify_agent_in_job_ignores_noninteractive_letta_processes() {
         for args in [
+            vec!["--disable-memory-guard", "--output-format", "json"],
+            vec!["--disable-memory-guard", "--prompt", "hello"],
+            vec!["--disable-memory-guard", "--input-format=stream-json"],
+            vec!["--disable-memory-guard", "--ephemeral"],
+            vec!["--disable-memory-guard", "--max-turns=1"],
             vec!["--prompt", "hello"],
             vec!["--output-format", "json"],
             vec!["--input-format=stream-json"],

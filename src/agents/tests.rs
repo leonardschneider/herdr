@@ -431,7 +431,7 @@ const EXPECTED_REPORT_POLICIES: [ExpectedReportPolicy; 24] = [
         Some("herdr:letta"),
         ReportAuthority::SessionIdentityOnly,
         false,
-        &[],
+        &["new", "resume"],
         false,
         None,
         false,
